@@ -1,6 +1,6 @@
 /**
  * SATU FUNGSI INSTALASI: isi StorageConfig.gs lalu Run setupLms().
- * Aman dijalankan ulang: schema diverifikasi, seed struktur tidak menghapus data.
+ * Aman dijalankan ulang: schema diverifikasi, seed struktur tidak menghapus data mahasiswa.
  */
 function setupLms() {
   var lock=LockService.getScriptLock();lock.waitLock(30000);
@@ -17,6 +17,7 @@ function setupLms() {
     seedSettings_();
     seedWeeks_();
     seedProjects_();
+    cleanupLegacyStaticMetaV12_();
     seedStaticActivityMeta_();
     ensureFolders_();
     var admin=ensureAdmin_();
@@ -25,7 +26,7 @@ function setupLms() {
     Logger.log('Drive: '+root.getUrl());
     Logger.log('Login admin: ADMIN');
     if(admin.pin)Logger.log('PIN admin sementara: '+admin.pin);
-    Logger.log('Konten inti 28 materi/kuis/diskusi dilayani statis oleh Vercel. Sheets menyimpan data dinamis.');
+    Logger.log('Konten inti: 28 materi, 7 kuis, 7 diskusi. Konten dibaca dari Vercel; Sheets menyimpan data dinamis.');
     return {success:true,spreadsheetUrl:ss.getUrl(),folderUrl:root.getUrl(),adminLogin:'ADMIN',temporaryPin:admin.pin||''};
   }finally{lock.releaseLock();}
 }
@@ -49,9 +50,11 @@ function seedSettings_() {
   Object.keys(DEFAULT_SETTINGS).forEach(function(k){if(!findOne_(LMS.SHEETS.SETTINGS,'key',k))setSetting_(k,DEFAULT_SETTINGS[k]);});
 }
 function seedWeeks_() {
+  var dates=['2026-09-07','2026-09-14','2026-09-21','2026-09-28','2026-10-05','2026-10-12','2026-10-19','2026-10-26','2026-11-02','2026-11-09','2026-11-16','2026-11-23','2026-11-30','2026-12-07'];
+  var deadline1='2026-10-19T23:59:59+07:00',deadline2='2026-12-07T23:59:59+07:00';
   for(var w=1;w<=14;w++){
-    var id='W'+('0'+w).slice(-2),m1=w*2-1,m2=w*2;
-    upsertObj_(LMS.SHEETS.WEEKS,'week_id',{week_id:id,week_no:w,title:'Minggu '+w+' — Materi '+m1+' & '+m2,summary_html:'',open_at:'',close_at:'',visible:true,updated_at:nowIso_()});
+    var id='W'+('0'+w).slice(-2),m1=w*2-1,m2=w*2,block=w<=7?1:2,deadline=block===1?deadline1:deadline2;
+    upsertObj_(LMS.SHEETS.WEEKS,'week_id',{week_id:id,week_no:w,title:'Pertemuan '+w+' — Materi '+m1+' & '+m2,summary_html:'<p>Blok '+block+'. Batas akhir pengumpulan blok: '+(block===1?'19 Oktober 2026':'7 Desember 2026')+'.</p>',open_at:dates[w-1]+'T00:00:00+07:00',close_at:deadline,visible:true,updated_at:nowIso_()});
   }
 }
 function seedProjects_() {
@@ -67,6 +70,14 @@ function seedProjects_() {
     }
   });
 }
+function cleanupLegacyStaticMetaV12_(){
+  // Metadata statis v1.2 disembunyikan, bukan dihapus, agar nilai/attempt uji lama tetap dapat dilacak.
+  for(var n=1;n<=28;n++){
+    var s=('0'+n).slice(-2),qa=findOne_(LMS.SHEETS.ACTIVITIES,'activity_id','QUIZ_M'+s),da=findOne_(LMS.SHEETS.ACTIVITIES,'activity_id','DISC_M'+s);
+    if(qa)updateRowObj_(LMS.SHEETS.ACTIVITIES,qa.__row,{visible:false,updated_at:nowIso_()});
+    if(da)updateRowObj_(LMS.SHEETS.ACTIVITIES,da.__row,{visible:false,updated_at:nowIso_()});
+  }
+}
 function ensureAdmin_() {
   var users=rows_(LMS.SHEETS.USERS),found=null;
   for(var i=0;i<users.length;i++)if(String(users[i].role).toLowerCase()==='admin'&&asBool_(users[i].active)){found=users[i];break;}
@@ -76,7 +87,7 @@ function ensureAdmin_() {
   return {created:true,pin:pin};
 }
 function repairLms() {
-  ensureSecrets_();ensureSchema_();seedSettings_();seedWeeks_();seedProjects_();seedStaticActivityMeta_();ensureFolders_();return {success:true,message:'Struktur diperiksa. Metadata aktivitas inti disinkronkan; materi/soal/prompt tetap statis di Vercel.'};
+  ensureSecrets_();ensureSchema_();seedSettings_();seedWeeks_();seedProjects_();cleanupLegacyStaticMetaV12_();seedStaticActivityMeta_();ensureFolders_();return {success:true,message:'Struktur diperiksa. Jadwal 14 pertemuan, 7 kuis, dan 7 diskusi disinkronkan tanpa menghapus data mahasiswa.'};
 }
 function resetAdminPin() {
   var pin='123456'; // GANTI sebelum Run, lalu hapus fungsi ini jika sudah selesai.

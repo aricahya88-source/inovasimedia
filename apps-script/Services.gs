@@ -13,9 +13,22 @@ function activityById_(id){return findOne_(LMS.SHEETS.ACTIVITIES,'activity_id',i
 function quizByActivity_(id){return findOne_(LMS.SHEETS.QUIZZES,'activity_id',id);}
 function discussionByActivity_(id){return findOne_(LMS.SHEETS.DISCUSSIONS,'activity_id',id);}
 
+function resolveCurrentWeek_(weeks){
+  var mode=String(setting_('WEEK_MODE','AUTO')).toUpperCase();
+  if(mode!=='AUTO'){
+    var manual=num_(setting_('CURRENT_WEEK','1'),1);
+    return weeks.filter(function(w){return num_(w.week_no)===manual;})[0]||weeks[0];
+  }
+  var sorted=weeks.slice().sort(function(a,b){return num_(a.week_no)-num_(b.week_no);}),now=Date.now(),chosen=sorted[0]||null;
+  for(var i=0;i<sorted.length;i++){
+    var open=sorted[i].open_at?new Date(sorted[i].open_at).getTime():NaN;
+    if(!isNaN(open)&&open<=now)chosen=sorted[i];
+  }
+  return chosen;
+}
 function dashboardService_(request) {
-  var user=requireUser_(request),current=num_(setting_('CURRENT_WEEK','1'),1);
-  var weeks=rows_(LMS.SHEETS.WEEKS),week=weeks.filter(function(w){return num_(w.week_no)===current;})[0]||weeks[0];
+  var user=requireUser_(request);
+  var weeks=rows_(LMS.SHEETS.WEEKS),week=resolveCurrentWeek_(weeks);
   var activities=rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return visible_(a.visible);});
   var submissions=findMany_(LMS.SHEETS.SUBMISSIONS,'user_id',user.user_id);
   var attempts=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'user_id',user.user_id);
@@ -262,6 +275,38 @@ function adminResetPin_(request,payload){
   var pin=String(payload.pin||'').trim();if(!pin)pin=String(Math.floor(100000+Math.random()*900000));if(pin.length<6)throw new Error('PIN minimal 6 karakter.');
   var hp=makeUserPin_(pin);updateRowObj_(LMS.SHEETS.USERS,u.__row,{pin_salt:hp.salt,pin_hash:hp.hash,updated_at:nowIso_()});log_(admin.user_id,'RESET_PIN','user',u.user_id,{});return {pin:pin};
 }
+
+function adminImportUsers_(request,payload){
+  var admin=requireAdmin_(request),incoming=payload.rows||[],mode=String(payload.duplicate_mode||'skip').toLowerCase();
+  if(!Array.isArray(incoming))throw new Error('Data import user tidak valid.');
+  if(incoming.length>500)throw new Error('Maksimal 500 user per import.');
+  if(['skip','update'].indexOf(mode)<0)mode='skip';
+  var existing=rows_(LMS.SHEETS.USERS),byNim={},byEmail={};
+  existing.forEach(function(u){var n=String(u.nim||'').trim().toLowerCase(),e=String(u.email||'').trim().toLowerCase();if(n)byNim[n]=u;if(e)byEmail[e]=u;});
+  var seen={},report={inserted:0,updated:0,skipped:0,errors:[],generatedPins:[]};
+  incoming.forEach(function(raw,idx){
+    try{
+      raw=raw||{};var nim=String(raw.nim||'').trim(),name=String(raw.name||'').trim(),email=String(raw.email||'').trim(),className=String(raw.class_name||'').trim(),pin=String(raw.initial_pin||'').trim();
+      if(!nim)throw new Error('NIM wajib diisi.');if(!name)throw new Error('Nama wajib diisi.');
+      var key=nim.toLowerCase();if(seen[key]){report.skipped++;report.errors.push('Baris '+(idx+2)+': NIM '+nim+' duplikat di file.');return;}seen[key]=true;
+      if(pin&&pin.length<6)throw new Error('initial_pin minimal 6 karakter.');
+      var found=byNim[key]||(email?byEmail[email.toLowerCase()]:null),now=nowIso_(),active=(raw.active===''||raw.active===undefined||raw.active===null)?true:asBool_(raw.active);
+      if(found){
+        if(['admin','dosen'].indexOf(String(found.role).toLowerCase())>=0)throw new Error('NIM/email milik akun '+found.role+' dan tidak boleh ditimpa lewat import mahasiswa.');
+        if(mode==='skip'){report.skipped++;return;}
+        var update={nim:nim,name:name,email:email,class_name:className,role:'mahasiswa',active:active,updated_at:now};
+        if(pin){var hp=makeUserPin_(pin);update.pin_salt=hp.salt;update.pin_hash=hp.hash;}
+        updateRowObj_(LMS.SHEETS.USERS,found.__row,update);report.updated++;
+      }else{
+        if(!pin)pin=String(Math.floor(100000+Math.random()*900000));
+        var hp2=makeUserPin_(pin),row={user_id:makeId_('USR'),nim:nim,name:name,email:email,role:'mahasiswa',class_name:className,pin_salt:hp2.salt,pin_hash:hp2.hash,active:active,created_at:now,updated_at:now};
+        appendObj_(LMS.SHEETS.USERS,row);var created=findOne_(LMS.SHEETS.USERS,'user_id',row.user_id)||row;byNim[key]=created;if(email)byEmail[email.toLowerCase()]=created;report.inserted++;report.generatedPins.push({nim:nim,name:name,pin:pin});
+      }
+    }catch(err){report.errors.push('Baris '+(idx+2)+': '+err.message);}
+  });
+  log_(admin.user_id,'IMPORT_USERS_XLSX','system','',{inserted:report.inserted,updated:report.updated,skipped:report.skipped,errors:report.errors.length});return report;
+}
+
 function adminListAnnouncements_(request){requireAdmin_(request);return rows_(LMS.SHEETS.ANNOUNCEMENTS).sort(function(a,b){return new Date(b.published_at||b.updated_at)-new Date(a.published_at||a.updated_at);}).map(cleanObj_);}
 function adminSaveAnnouncement_(request,payload){
   var admin=requireAdmin_(request),a=payload.announcement||{},id=String(a.announcement_id||makeId_('ANN')),now=nowIso_();
@@ -417,20 +462,23 @@ function adminImportWorkbook_(request,payload){
 }
 
 
-/* ================= STATIC COURSE v1.2 =================
+/* ================= STATIC COURSE v1.3 =================
    Curriculum content is served by Vercel/CDN. Only mutable learner data hits Sheets. */
 function staticQuizMeta_(quizId){var q=STATIC_QUIZ_BANK[String(quizId||'')];if(!q)throw new Error('Kuis statis tidak ditemukan.');return q;}
 function staticDiscussionMeta_(discussionId){var d=STATIC_DISCUSSION_BANK[String(discussionId||'')];if(!d)throw new Error('Diskusi statis tidak ditemukan.');return d;}
+function staticClosed_(meta){var due=String(meta&&meta.due_at||'');if(!due)return false;var t=new Date(due).getTime();return !isNaN(t)&&Date.now()>t;}
+function assertStaticOpen_(meta,label){if(staticClosed_(meta))throw new Error((label||'Aktivitas')+' sudah melewati batas akhir pengumpulan.');}
 function staticQuizByActivity_(activityId){var id=String(activityId||'');var keys=Object.keys(STATIC_QUIZ_BANK);for(var i=0;i<keys.length;i++){var q=STATIC_QUIZ_BANK[keys[i]];if(q.activity_id===id)return {quiz_id:keys[i],meta:q};}throw new Error('Kuis statis tidak ditemukan.');}
 
 function getStaticQuizStatusService_(request,payload){
   var user=requireUser_(request),found=payload.quiz_id?{quiz_id:String(payload.quiz_id),meta:staticQuizMeta_(payload.quiz_id)}:staticQuizByActivity_(payload.activity_id),q=found.meta;
   var attempts=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'quiz_id',found.quiz_id).filter(function(x){return x.user_id===user.user_id;});
   var best=null;attempts.forEach(function(x){if(!best||num_(x.percentage)>num_(best.percentage))best=x;});
-  return {attempts:attempts.length,attempt_limit:num_(q.attempt_limit,3),best:best?{score:num_(best.score),max_score:num_(best.max_score),percentage:num_(best.percentage)}:null};
+  return {attempts:attempts.length,attempt_limit:num_(q.attempt_limit,3),best:best?{score:num_(best.score),max_score:num_(best.max_score),percentage:num_(best.percentage)}:null,closed:staticClosed_(q),due_at:String(q.due_at||'')};
 }
 function submitStaticQuizService_(request,payload){
   var user=requireUser_(request),quizId=String(payload.quiz_id||''),q=staticQuizMeta_(quizId);
+  assertStaticOpen_(q,'Kuis');
   if(payload.activity_id&&String(payload.activity_id)!==String(q.activity_id))throw new Error('Identitas kuis tidak sesuai.');
   var prior=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'quiz_id',quizId).filter(function(x){return x.user_id===user.user_id;});
   if(prior.length>=num_(q.attempt_limit,3))throw new Error('Kesempatan kuis sudah habis.');
@@ -445,12 +493,13 @@ function submitStaticQuizService_(request,payload){
   return {score:score,max_score:max,percentage:pct,attempt_no:attemptNo,feedback:q.show_feedback?feedback:[]};
 }
 function getStaticDiscussionPostsService_(request,payload){
-  requireUser_(request);var id=String(payload.discussion_id||'');staticDiscussionMeta_(id);var umap=userMap_();
+  requireUser_(request);var id=String(payload.discussion_id||''),meta=staticDiscussionMeta_(id),umap=userMap_();
   var posts=findMany_(LMS.SHEETS.POSTS,'discussion_id',id).filter(function(p){return String(p.status||'active')!=='deleted';}).sort(function(a,b){return new Date(a.created_at)-new Date(b.created_at);}).map(function(p){var c=cleanObj_(p);c.author=umap[p.user_id]||null;return c;});
-  return {posts:posts};
+  return {posts:posts,closed:staticClosed_(meta),due_at:String(meta.due_at||'')};
 }
 function createStaticPostService_(request,payload){
   var user=requireUser_(request),id=String(payload.discussion_id||''),meta=staticDiscussionMeta_(id),content=sanitizeHtml_(payload.content_html);
+  assertStaticOpen_(meta,'Diskusi');
   if(!content.replace(/<[^>]+>/g,'').trim())throw new Error('Respons diskusi kosong.');
   var row={post_id:makeId_('POST'),discussion_id:id,user_id:user.user_id,parent_post_id:String(payload.parent_post_id||''),content_html:content,created_at:nowIso_(),updated_at:nowIso_(),status:'active'};
   appendObj_(LMS.SHEETS.POSTS,row);log_(user.user_id,'CREATE_STATIC_POST','discussion',id,{activity_id:meta.activity_id});return cleanObj_(row);
@@ -464,7 +513,7 @@ function getStaticActivityProgressService_(request){
 }
 function seedStaticActivityMeta_(){
   var now=nowIso_(),acts=[],discs=[];
-  (STATIC_ACTIVITY_META||[]).forEach(function(a){acts.push({activity_id:a.activity_id,week_id:a.week_id,type:a.type,title:a.title,description_html:'',mode:a.mode||'individual',max_score:num_(a.max_score,100),due_at:'',visible:true,allow_comments:a.type==='discussion'||a.type==='project',project_code:a.project_code||'',created_at:now,updated_at:now});});
+  (STATIC_ACTIVITY_META||[]).forEach(function(a){acts.push({activity_id:a.activity_id,week_id:a.week_id,type:a.type,title:a.title,description_html:'',mode:a.mode||'individual',max_score:num_(a.max_score,100),due_at:String(a.due_at||''),visible:true,allow_comments:a.type==='discussion'||a.type==='project',project_code:a.project_code||'',created_at:now,updated_at:now});});
   Object.keys(STATIC_DISCUSSION_BANK||{}).forEach(function(id){var d=STATIC_DISCUSSION_BANK[id];discs.push({discussion_id:id,activity_id:d.activity_id,prompt_html:'',min_posts:num_(d.min_posts,1),grading_mode:'manual',updated_at:now});});
   bulkUpsert_(LMS.SHEETS.ACTIVITIES,'activity_id',acts);bulkUpsert_(LMS.SHEETS.DISCUSSIONS,'discussion_id',discs);SpreadsheetApp.flush();
   return {activities:acts.length,discussions:discs.length};

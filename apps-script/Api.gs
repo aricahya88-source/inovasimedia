@@ -42,6 +42,7 @@ function api(request) {
       case 'adminListUsers': return ok_(adminListUsers_(request));
       case 'adminSaveUser': return ok_(adminSaveUser_(request,payload));
       case 'adminResetPin': return ok_(adminResetPin_(request,payload));
+      case 'adminImportUsers': return ok_(adminImportUsers_(request,payload));
       case 'adminListAnnouncements': return ok_(adminListAnnouncements_(request));
       case 'adminSaveAnnouncement': return ok_(adminSaveAnnouncement_(request,payload));
       case 'adminListGroups': return ok_(adminListGroups_(request));

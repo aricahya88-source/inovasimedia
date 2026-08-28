@@ -21,6 +21,11 @@ export type WeekSummary = {
   title: string;
   material_count: number;
   activity_count: number;
+  meeting_date?: string;
+  meeting_date_label?: string;
+  block?: number;
+  block_deadline?: string;
+  block_deadline_label?: string;
 };
 
 export type Material = {
@@ -55,6 +60,12 @@ export type DiscussionSummary = {
   prompt_html: string;
   max_score: number;
   post_count?: number;
+  checkpoint_no?: number;
+  material_range?: string;
+  recommended_date?: string;
+  recommended_date_label?: string;
+  due_at?: string;
+  due_label?: string;
 };
 
 export type Post = {

@@ -1,6 +1,6 @@
 var LMS = {
   APP_NAME: 'LMS Inovasi Media Pembelajaran Bahasa Arab',
-  VERSION: '1.2.0-static-content',
+  VERSION: '1.3.0-7-checkpoints',
   TIMEZONE: Session.getScriptTimeZone() || 'Asia/Jakarta',
   MAX_UPLOAD_BYTES: 3 * 1024 * 1024,
   SHEETS: {
@@ -61,5 +61,6 @@ var DEFAULT_SETTINGS = {
   COURSE_NAME:'Inovasi Media Pembelajaran Bahasa Arab',
   COURSE_WEEKS:'14',
   FILE_SHARING_MODE:'LINK_VIEWER',
-  CURRENT_WEEK:'1'
+  CURRENT_WEEK:'1',
+  WEEK_MODE:'AUTO'
 };

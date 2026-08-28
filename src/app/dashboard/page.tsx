@@ -32,13 +32,13 @@ export default function DashboardPage(){
       </section>
       <div className="stats-grid">
         <GlassCard className="stat-card"><div className="icon-bubble teal"><BookOpenText/></div><div><strong>{d.stats.activities}</strong><span>Aktivitas</span></div></GlassCard>
-        <GlassCard className="stat-card"><div className="icon-bubble amber"><CalendarDays/></div><div><strong>{d.currentWeek?.week_no||1}</strong><span>Minggu aktif</span></div></GlassCard>
+        <GlassCard className="stat-card"><div className="icon-bubble amber"><CalendarDays/></div><div><strong>{d.currentWeek?.week_no||1}</strong><span>Pertemuan aktif</span></div></GlassCard>
         <GlassCard className="stat-card"><div className="icon-bubble coral"><MessagesSquare/></div><div><strong>{d.stats.completed}</strong><span>Selesai</span></div></GlassCard>
         <GlassCard className="stat-card"><div className="icon-bubble teal"><Award/></div><div><strong>{d.stats.graded}</strong><span>Dinilai</span></div></GlassCard>
       </div>
 
       {d.currentWeek&&<GlassCard className="feature-card">
-        <div className="icon-bubble teal"><CalendarDays/></div><div className="grow"><span className="eyebrow">MINGGU BERJALAN</span><h3>{d.currentWeek.title}</h3><p className="muted">Dua materi dalam satu minggu, lengkap dengan kuis dan forum.</p></div>
+        <div className="icon-bubble teal"><CalendarDays/></div><div className="grow"><span className="eyebrow">PERTEMUAN BERJALAN</span><h3>{d.currentWeek.title}</h3><p className="muted">Dua materi per pertemuan; kuis dan forum muncul hanya pada checkpoint tertentu.</p></div>
         <Link className="circle-link" href={`/weeks/${d.currentWeek.week_no}`}><ArrowRight/></Link>
       </GlassCard>}
 

@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 
 const student = [
   ['/dashboard','Home',House],
-  ['/weeks','Minggu',CalendarDays],
+  ['/weeks','Pertemuan',CalendarDays],
   ['/discussions','Diskusi',MessagesSquare],
   ['/tasks','Tugas',ClipboardCheck],
   ['/grades','Nilai',Star]
@@ -29,7 +29,7 @@ export default function AppShell({children,title='LMS Inovasi Media'}:{children:
   const [open,setOpen]=useState(false);
   const isAdmin=!!user && ['admin','dosen'].includes(user.role);
   const mobileNav=isAdmin
-    ? [['/dashboard','Home',House],['/weeks','Minggu',CalendarDays],['/admin','Kelola',Settings2],['/grades','Nilai',Star],['/admin/users','Pengguna',Users]] as const
+    ? [['/dashboard','Home',House],['/weeks','Pertemuan',CalendarDays],['/admin','Kelola',Settings2],['/grades','Nilai',Star],['/admin/users','Pengguna',Users]] as const
     : student;
 
   const nav=[...student,...desktopExtra,...(isAdmin ? [
