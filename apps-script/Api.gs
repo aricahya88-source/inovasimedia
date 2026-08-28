@@ -19,6 +19,11 @@ function api(request) {
       case 'listGrades': return ok_(listGradesService_(request));
       case 'getQuiz': return ok_(getQuizService_(request,payload));
       case 'submitQuiz': return ok_(submitQuizService_(request,payload));
+      case 'getStaticQuizStatus': return ok_(getStaticQuizStatusService_(request,payload));
+      case 'submitStaticQuiz': return ok_(submitStaticQuizService_(request,payload));
+      case 'getStaticDiscussionPosts': return ok_(getStaticDiscussionPostsService_(request,payload));
+      case 'createStaticPost': return ok_(createStaticPostService_(request,payload));
+      case 'getStaticActivityProgress': return ok_(getStaticActivityProgressService_(request));
       case 'getProjectPlan': return ok_(getProjectPlanService_(request,payload));
       case 'saveProjectPlan': return ok_(saveProjectPlanService_(request,payload));
       case 'uploadAsset': return ok_(uploadAssetService_(request,payload));

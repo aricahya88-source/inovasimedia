@@ -1,6 +1,6 @@
 var LMS = {
   APP_NAME: 'LMS Inovasi Media Pembelajaran Bahasa Arab',
-  VERSION: '1.0.0-next',
+  VERSION: '1.2.0-static-content',
   TIMEZONE: Session.getScriptTimeZone() || 'Asia/Jakarta',
   MAX_UPLOAD_BYTES: 3 * 1024 * 1024,
   SHEETS: {

@@ -22,9 +22,10 @@ export default function TaskPage({params}:{params:Promise<{id:string}>}){
   const {id}=use(params);
   const [d,setD]=useState<TaskData|null>(null);const [error,setError]=useState('');
   const [content,setContent]=useState('');const [link,setLink]=useState('');const [file,setFile]=useState<File|null>(null);const [busy,setBusy]=useState(false);
+  const isStaticQuiz=String(id).startsWith('QUIZ_');
   const load=()=>api<TaskData>('getTask',{activity_id:id}).then(setD).catch(e=>setError(e.message));
-  useEffect(()=>{load();},[id]);
-  if(d?.activity.type==='quiz') return <AuthGate><AppShell title="Kuis"><Link href="/tasks" className="button soft compact"><ArrowLeft/>Kembali</Link><QuizPlayer activityId={id}/></AppShell></AuthGate>;
+  useEffect(()=>{if(!isStaticQuiz)load();},[id,isStaticQuiz]);
+  if(isStaticQuiz||d?.activity.type==='quiz') return <AuthGate><AppShell title="Kuis"><Link href="/tasks" className="button soft compact"><ArrowLeft/>Kembali</Link><QuizPlayer activityId={id}/></AppShell></AuthGate>;
 
   const submit=async()=>{
     setBusy(true);setError('');

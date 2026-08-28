@@ -17,6 +17,7 @@ function setupLms() {
     seedSettings_();
     seedWeeks_();
     seedProjects_();
+    seedStaticActivityMeta_();
     ensureFolders_();
     var admin=ensureAdmin_();
     Logger.log('=== LMS SIAP ===');
@@ -24,7 +25,7 @@ function setupLms() {
     Logger.log('Drive: '+root.getUrl());
     Logger.log('Login admin: ADMIN');
     if(admin.pin)Logger.log('PIN admin sementara: '+admin.pin);
-    Logger.log('Setelah frontend Next.js aktif, login admin > Kelola > Pasang Semua Konten DOCX.');
+    Logger.log('Konten inti 28 materi/kuis/diskusi dilayani statis oleh Vercel. Sheets menyimpan data dinamis.');
     return {success:true,spreadsheetUrl:ss.getUrl(),folderUrl:root.getUrl(),adminLogin:'ADMIN',temporaryPin:admin.pin||''};
   }finally{lock.releaseLock();}
 }
@@ -51,12 +52,6 @@ function seedWeeks_() {
   for(var w=1;w<=14;w++){
     var id='W'+('0'+w).slice(-2),m1=w*2-1,m2=w*2;
     upsertObj_(LMS.SHEETS.WEEKS,'week_id',{week_id:id,week_no:w,title:'Minggu '+w+' — Materi '+m1+' & '+m2,summary_html:'',open_at:'',close_at:'',visible:true,updated_at:nowIso_()});
-    [m1,m2].forEach(function(m,idx){
-      var mid='MAT_'+('0'+m).slice(-2);
-      if(!findOne_(LMS.SHEETS.MATERIALS,'material_id',mid)){
-        appendObj_(LMS.SHEETS.MATERIALS,{material_id:mid,week_id:id,material_no:m,order_no:idx+1,title:'Materi '+m,content_html:'',resource_url:'',visible:true,updated_at:nowIso_()});
-      }
-    });
   }
 }
 function seedProjects_() {
@@ -81,7 +76,7 @@ function ensureAdmin_() {
   return {created:true,pin:pin};
 }
 function repairLms() {
-  ensureSecrets_();ensureSchema_();seedSettings_();seedWeeks_();seedProjects_();ensureFolders_();return {success:true,message:'Struktur diperiksa tanpa menghapus data.'};
+  ensureSecrets_();ensureSchema_();seedSettings_();seedWeeks_();seedProjects_();seedStaticActivityMeta_();ensureFolders_();return {success:true,message:'Struktur diperiksa. Metadata aktivitas inti disinkronkan; materi/soal/prompt tetap statis di Vercel.'};
 }
 function resetAdminPin() {
   var pin='123456'; // GANTI sebelum Run, lalu hapus fungsi ini jika sudah selesai.

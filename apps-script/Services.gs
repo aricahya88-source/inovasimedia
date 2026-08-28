@@ -23,7 +23,9 @@ function dashboardService_(request) {
   var completedMap={};
   submissions.forEach(function(s){completedMap[s.activity_id]=true;});
   attempts.forEach(function(a){
-    var q=findOne_(LMS.SHEETS.QUIZZES,'quiz_id',a.quiz_id);if(q)completedMap[q.activity_id]=true;
+    var q=findOne_(LMS.SHEETS.QUIZZES,'quiz_id',a.quiz_id);
+    if(q)completedMap[q.activity_id]=true;
+    else if(typeof STATIC_QUIZ_BANK!=='undefined'&&STATIC_QUIZ_BANK[a.quiz_id])completedMap[STATIC_QUIZ_BANK[a.quiz_id].activity_id]=true;
   });
   var upcoming=activities.filter(function(a){return a.due_at&&new Date(a.due_at).getTime()>=Date.now();})
     .sort(function(a,b){return new Date(a.due_at)-new Date(b.due_at);}).slice(0,6)
@@ -412,4 +414,58 @@ function adminImportWorkbook_(request,payload){
     });
   });
   log_(admin.user_id,'IMPORT_XLSX','system','',{inserted:report.inserted,updated:report.updated,errors:report.errors.length});return report;
+}
+
+
+/* ================= STATIC COURSE v1.2 =================
+   Curriculum content is served by Vercel/CDN. Only mutable learner data hits Sheets. */
+function staticQuizMeta_(quizId){var q=STATIC_QUIZ_BANK[String(quizId||'')];if(!q)throw new Error('Kuis statis tidak ditemukan.');return q;}
+function staticDiscussionMeta_(discussionId){var d=STATIC_DISCUSSION_BANK[String(discussionId||'')];if(!d)throw new Error('Diskusi statis tidak ditemukan.');return d;}
+function staticQuizByActivity_(activityId){var id=String(activityId||'');var keys=Object.keys(STATIC_QUIZ_BANK);for(var i=0;i<keys.length;i++){var q=STATIC_QUIZ_BANK[keys[i]];if(q.activity_id===id)return {quiz_id:keys[i],meta:q};}throw new Error('Kuis statis tidak ditemukan.');}
+
+function getStaticQuizStatusService_(request,payload){
+  var user=requireUser_(request),found=payload.quiz_id?{quiz_id:String(payload.quiz_id),meta:staticQuizMeta_(payload.quiz_id)}:staticQuizByActivity_(payload.activity_id),q=found.meta;
+  var attempts=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'quiz_id',found.quiz_id).filter(function(x){return x.user_id===user.user_id;});
+  var best=null;attempts.forEach(function(x){if(!best||num_(x.percentage)>num_(best.percentage))best=x;});
+  return {attempts:attempts.length,attempt_limit:num_(q.attempt_limit,3),best:best?{score:num_(best.score),max_score:num_(best.max_score),percentage:num_(best.percentage)}:null};
+}
+function submitStaticQuizService_(request,payload){
+  var user=requireUser_(request),quizId=String(payload.quiz_id||''),q=staticQuizMeta_(quizId);
+  if(payload.activity_id&&String(payload.activity_id)!==String(q.activity_id))throw new Error('Identitas kuis tidak sesuai.');
+  var prior=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'quiz_id',quizId).filter(function(x){return x.user_id===user.user_id;});
+  if(prior.length>=num_(q.attempt_limit,3))throw new Error('Kesempatan kuis sudah habis.');
+  var answers=payload.answers||{},score=0,max=0,feedback=[];
+  (q.questions||[]).forEach(function(x){var pts=num_(x.points,1),correct=String(answers[x.question_id]||'').toUpperCase()===String(x.correct_option||'').toUpperCase();max+=pts;if(correct)score+=pts;feedback.push({question_id:x.question_id,correct:correct,correct_option:q.show_feedback?x.correct_option:'',explanation_html:q.show_feedback?String(x.explanation_html||''):''});});
+  var pct=max?score/max*100:0,attemptNo=prior.length+1,now=nowIso_();
+  appendObj_(LMS.SHEETS.QUIZ_ATTEMPTS,{attempt_id:makeId_('ATT'),quiz_id:quizId,user_id:user.user_id,attempt_no:attemptNo,answers_json:JSON.stringify(answers),score:score,max_score:max,percentage:pct,submitted_at:now});
+  var bestScore=score;prior.forEach(function(x){bestScore=Math.max(bestScore,num_(x.score));});
+  var existing=findMany_(LMS.SHEETS.GRADES,'activity_id',q.activity_id).filter(function(g){return g.user_id===user.user_id;})[0];
+  upsertObj_(LMS.SHEETS.GRADES,'grade_id',{grade_id:existing?existing.grade_id:makeId_('GRD'),activity_id:q.activity_id,user_id:user.user_id,submission_id:'',score:bestScore,max_score:max,feedback_html:'<p>Nilai terbaik kuis formatif.</p>',published:true,graded_by:'AUTO',graded_at:now,updated_at:now});
+  log_(user.user_id,'SUBMIT_STATIC_QUIZ','quiz',quizId,{score:score,max:max,attempt:attemptNo});
+  return {score:score,max_score:max,percentage:pct,attempt_no:attemptNo,feedback:q.show_feedback?feedback:[]};
+}
+function getStaticDiscussionPostsService_(request,payload){
+  requireUser_(request);var id=String(payload.discussion_id||'');staticDiscussionMeta_(id);var umap=userMap_();
+  var posts=findMany_(LMS.SHEETS.POSTS,'discussion_id',id).filter(function(p){return String(p.status||'active')!=='deleted';}).sort(function(a,b){return new Date(a.created_at)-new Date(b.created_at);}).map(function(p){var c=cleanObj_(p);c.author=umap[p.user_id]||null;return c;});
+  return {posts:posts};
+}
+function createStaticPostService_(request,payload){
+  var user=requireUser_(request),id=String(payload.discussion_id||''),meta=staticDiscussionMeta_(id),content=sanitizeHtml_(payload.content_html);
+  if(!content.replace(/<[^>]+>/g,'').trim())throw new Error('Respons diskusi kosong.');
+  var row={post_id:makeId_('POST'),discussion_id:id,user_id:user.user_id,parent_post_id:String(payload.parent_post_id||''),content_html:content,created_at:nowIso_(),updated_at:nowIso_(),status:'active'};
+  appendObj_(LMS.SHEETS.POSTS,row);log_(user.user_id,'CREATE_STATIC_POST','discussion',id,{activity_id:meta.activity_id});return cleanObj_(row);
+}
+function getStaticActivityProgressService_(request){
+  var user=requireUser_(request),attempts=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'user_id',user.user_id),quizAttempts={},projectStatus={};
+  attempts.forEach(function(a){quizAttempts[a.quiz_id]=(quizAttempts[a.quiz_id]||0)+1;});
+  findMany_(LMS.SHEETS.PROJECT_PLANS,'user_id',user.user_id).forEach(function(p){projectStatus[p.project_code]=p.status||'DRAFT';});
+  var memberships=findMany_(LMS.SHEETS.GROUP_MEMBERS,'user_id',user.user_id);if(memberships.length){var gids={};memberships.forEach(function(m){gids[m.group_id]=true;});rows_(LMS.SHEETS.PROJECT_PLANS).forEach(function(p){if(gids[p.group_id])projectStatus[p.project_code]=p.status||'DRAFT';});}
+  return {quizAttempts:quizAttempts,projectStatus:projectStatus};
+}
+function seedStaticActivityMeta_(){
+  var now=nowIso_(),acts=[],discs=[];
+  (STATIC_ACTIVITY_META||[]).forEach(function(a){acts.push({activity_id:a.activity_id,week_id:a.week_id,type:a.type,title:a.title,description_html:'',mode:a.mode||'individual',max_score:num_(a.max_score,100),due_at:'',visible:true,allow_comments:a.type==='discussion'||a.type==='project',project_code:a.project_code||'',created_at:now,updated_at:now});});
+  Object.keys(STATIC_DISCUSSION_BANK||{}).forEach(function(id){var d=STATIC_DISCUSSION_BANK[id];discs.push({discussion_id:id,activity_id:d.activity_id,prompt_html:'',min_posts:num_(d.min_posts,1),grading_mode:'manual',updated_at:now});});
+  bulkUpsert_(LMS.SHEETS.ACTIVITIES,'activity_id',acts);bulkUpsert_(LMS.SHEETS.DISCUSSIONS,'discussion_id',discs);SpreadsheetApp.flush();
+  return {activities:acts.length,discussions:discs.length};
 }
