@@ -71,12 +71,14 @@ function seedProjects_() {
   });
 }
 function cleanupLegacyStaticMetaV12_(){
-  // Metadata statis v1.2 disembunyikan, bukan dihapus, agar nilai/attempt uji lama tetap dapat dilacak.
+  // v1.4: metadata statis lama (28 kuis + 28 diskusi) selalu dinonaktifkan.
+  // Row tidak dihapus agar attempt/nilai/post uji lama tetap dapat dilacak jika diperlukan.
   for(var n=1;n<=28;n++){
     var s=('0'+n).slice(-2),qa=findOne_(LMS.SHEETS.ACTIVITIES,'activity_id','QUIZ_M'+s),da=findOne_(LMS.SHEETS.ACTIVITIES,'activity_id','DISC_M'+s);
     if(qa)updateRowObj_(LMS.SHEETS.ACTIVITIES,qa.__row,{visible:false,updated_at:nowIso_()});
     if(da)updateRowObj_(LMS.SHEETS.ACTIVITIES,da.__row,{visible:false,updated_at:nowIso_()});
   }
+  SpreadsheetApp.flush();
 }
 function ensureAdmin_() {
   var users=rows_(LMS.SHEETS.USERS),found=null;
@@ -87,7 +89,7 @@ function ensureAdmin_() {
   return {created:true,pin:pin};
 }
 function repairLms() {
-  ensureSecrets_();ensureSchema_();seedSettings_();seedWeeks_();seedProjects_();cleanupLegacyStaticMetaV12_();seedStaticActivityMeta_();ensureFolders_();return {success:true,message:'Struktur diperiksa. Jadwal 14 pertemuan, 7 kuis, dan 7 diskusi disinkronkan tanpa menghapus data mahasiswa.'};
+  ensureSecrets_();ensureSchema_();seedSettings_();seedWeeks_();seedProjects_();cleanupLegacyStaticMetaV12_();seedStaticActivityMeta_();ensureFolders_();return {success:true,message:'Patch v1.4 selesai: cache konten diperbarui dan metadata lama 28 kuis/diskusi dinonaktifkan. Aktif: 14 pertemuan, 7 kuis, 7 diskusi.'};
 }
 function resetAdminPin() {
   var pin='123456'; // GANTI sebelum Run, lalu hapus fungsi ini jika sudah selesai.

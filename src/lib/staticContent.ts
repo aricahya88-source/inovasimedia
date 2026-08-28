@@ -1,5 +1,13 @@
 import type { Activity, Material, WeekSummary, DiscussionSummary } from './types';
 
+/**
+ * IMPORTANT:
+ * Public course content is static on Vercel/CDN, not stored in Sheets.
+ * A revision query is appended to every request so an older PWA service worker
+ * cannot keep serving the previous 28-quiz / 28-discussion JSON forever.
+ */
+const STATIC_CONTENT_REV = 'v1.4.0-20260828';
+
 export type StaticMilestone = {
   block:number;
   title:string;
@@ -65,8 +73,15 @@ type CourseFile={
 let courseCache:CourseFile|null=null;
 let discussionCache:DiscussionSummary[]|null=null;
 
+function withRevision(url:string){
+  const sep=url.includes('?')?'&':'?';
+  return `${url}${sep}rev=${encodeURIComponent(STATIC_CONTENT_REV)}`;
+}
+
 async function staticJson<T>(url:string):Promise<T>{
-  const response=await fetch(url,{cache:'force-cache'});
+  // no-store is intentional: Vercel CDN is still fast, while the browser/PWA
+  // always asks for the current static revision instead of a stale semester bundle.
+  const response=await fetch(withRevision(url),{cache:'no-store'});
   if(!response.ok) throw new Error(`Konten statis gagal dimuat (${response.status}).`);
   return response.json() as Promise<T>;
 }
@@ -79,7 +94,12 @@ export async function getStaticCourse(){
 
 export async function getStaticWeek(weekNo:number){
   if(!Number.isFinite(weekNo)||weekNo<1||weekNo>14) throw new Error('Pertemuan tidak ditemukan.');
-  return staticJson<StaticWeekData>(`/content/weeks/week-${String(weekNo).padStart(2,'0')}.json`);
+  const data=await staticJson<StaticWeekData>(`/content/weeks/week-${String(weekNo).padStart(2,'0')}.json`);
+  // Defensive validation prevents a bad/stale JSON response from crashing the whole client page.
+  if(!data || !data.week || !Array.isArray(data.materials) || !Array.isArray(data.activities)){
+    throw new Error('Format konten pertemuan tidak valid. Muat ulang halaman setelah deployment selesai.');
+  }
+  return data;
 }
 
 export function quizIdFromActivity(activityId:string){ return String(activityId).replace(/^QUIZ_/,'Q_'); }
@@ -88,6 +108,7 @@ export async function getStaticQuiz(activityId:string){ return staticJson<Static
 export async function getStaticDiscussions(){
   if(discussionCache) return discussionCache;
   discussionCache=await staticJson<DiscussionSummary[]>('/content/discussions.json');
+  if(!Array.isArray(discussionCache)) throw new Error('Format daftar diskusi tidak valid.');
   return discussionCache;
 }
 
@@ -99,5 +120,7 @@ export async function getStaticDiscussionByActivity(activityId:string){
 }
 
 export async function getStaticActivities(){
-  return staticJson<Array<Activity & {quiz_id?:string;discussion_id?:string;material_no?:number;material_range?:string}>>('/content/activity-index.json');
+  const rows=await staticJson<Array<Activity & {quiz_id?:string;discussion_id?:string;material_no?:number;material_range?:string}>>('/content/activity-index.json');
+  if(!Array.isArray(rows)) throw new Error('Format daftar aktivitas tidak valid.');
+  return rows;
 }
