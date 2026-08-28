@@ -1,0 +1,142 @@
+[
+  {
+    "material_no": 1,
+    "week_id": "W01",
+    "title": "Konsep dan Urgensi Inovasi Media Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 2,
+    "week_id": "W01",
+    "title": "Analisis Peserta Didik, Tujuan, Materi, dan Pemilihan Media"
+  },
+  {
+    "material_no": 3,
+    "week_id": "W02",
+    "title": "Difusi Inovasi Everett M. Rogers: Konsep, Unsur, Adopter, dan Proses Keputusan"
+  },
+  {
+    "material_no": 4,
+    "week_id": "W02",
+    "title": "Menerapkan Difusi Inovasi pada Adopsi Media Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 5,
+    "week_id": "W03",
+    "title": "Model ADDIE untuk Desain dan Pengembangan Media Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 6,
+    "week_id": "W03",
+    "title": "Model ASSURE untuk Merancang Pemanfaatan Media dalam Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 7,
+    "week_id": "W04",
+    "title": "Website sebagai Media Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 8,
+    "week_id": "W04",
+    "title": "Analisis Kebutuhan Pengguna untuk Website Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 9,
+    "week_id": "W05",
+    "title": "Arsitektur Informasi, Sitemap, dan Flowchart Website"
+  },
+  {
+    "material_no": 10,
+    "week_id": "W05",
+    "title": "UI/UX dan Wireframe Website Bahasa Arab: Responsif, Tipografi, dan RTL"
+  },
+  {
+    "material_no": 11,
+    "week_id": "W06",
+    "title": "Mengembangkan Halaman dan Navigasi Website Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 12,
+    "week_id": "W06",
+    "title": "Desain dan Organisasi Konten Website Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 13,
+    "week_id": "W07",
+    "title": "Integrasi Multimedia pada Website Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 14,
+    "week_id": "W07",
+    "title": "Fitur Interaktif, Umpan Balik, dan Gamifikasi pada Website"
+  },
+  {
+    "material_no": 15,
+    "week_id": "W08",
+    "title": "Integrasi AI/Generative AI secara Tepat dan Etis dalam Website Bahasa Arab"
+  },
+  {
+    "material_no": 16,
+    "week_id": "W08",
+    "title": "Pengujian dan Evaluasi Website Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 17,
+    "week_id": "W09",
+    "title": "Revisi, Deployment, Presentasi, dan Refleksi Website Final"
+  },
+  {
+    "material_no": 18,
+    "week_id": "W09",
+    "title": "Mobile Learning dan Analisis Kebutuhan Aplikasi HP Bahasa Arab"
+  },
+  {
+    "material_no": 19,
+    "week_id": "W10",
+    "title": "User Flow, Mobile UI/UX, dan Prototype Aplikasi Bahasa Arab"
+  },
+  {
+    "material_no": 20,
+    "week_id": "W10",
+    "title": "Pengembangan Aplikasi Mobile Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 21,
+    "week_id": "W11",
+    "title": "Testing, Revisi, dan Presentasi Aplikasi Mobile Bahasa Arab"
+  },
+  {
+    "material_no": 22,
+    "week_id": "W11",
+    "title": "Merancang dan Memproduksi Media Audio Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 23,
+    "week_id": "W12",
+    "title": "Editing, Evaluasi, dan Finalisasi Media Audio"
+  },
+  {
+    "material_no": 24,
+    "week_id": "W12",
+    "title": "Desain Media Visual Bahasa Arab: Hierarki, Tipografi, Harakat, dan RTL"
+  },
+  {
+    "material_no": 25,
+    "week_id": "W13",
+    "title": "Evaluasi, Revisi, dan Presentasi Media Visual Bahasa Arab"
+  },
+  {
+    "material_no": 26,
+    "week_id": "W13",
+    "title": "Praproduksi Media Audiovisual: Ide, Sinopsis, Naskah, dan Storyboard"
+  },
+  {
+    "material_no": 27,
+    "week_id": "W14",
+    "title": "Produksi dan Editing Media Audiovisual Pembelajaran Bahasa Arab"
+  },
+  {
+    "material_no": 28,
+    "week_id": "W14",
+    "title": "Quality Assurance, Evaluasi, Revisi, Presentasi, dan Refleksi Audiovisual"
+  }
+]

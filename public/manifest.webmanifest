@@ -1,0 +1,14 @@
+{
+  "name": "LMS Inovasi Media Pembelajaran Bahasa Arab",
+  "short_name": "LMS Inovasi",
+  "description": "LMS ringan berbasis proyek untuk Inovasi Media Pembelajaran Bahasa Arab.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAFAFA",
+  "theme_color": "#0A7C6E",
+  "icons": [
+    {"src":"/icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"/icon-512.png","sizes":"512x512","type":"image/png"}
+  ]
+}
