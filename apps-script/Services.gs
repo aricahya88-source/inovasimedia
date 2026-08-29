@@ -31,7 +31,9 @@ function dashboardService_(request) {
   var user=requireUser_(request);
   var weeks=rows_(LMS.SHEETS.WEEKS),week=resolveCurrentWeek_(weeks);
   var activities=rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return visible_(a.visible)&&!legacyStaticActivity_(a);});
-  var submissions=findMany_(LMS.SHEETS.SUBMISSIONS,'user_id',user.user_id);
+  var submissions=findMany_(LMS.SHEETS.SUBMISSIONS,'user_id',user.user_id),memberships=findMany_(LMS.SHEETS.GROUP_MEMBERS,'user_id',user.user_id),groupIds={};
+  memberships.forEach(function(m){groupIds[m.group_id]=true;});
+  if(Object.keys(groupIds).length){rows_(LMS.SHEETS.SUBMISSIONS).forEach(function(x){if(groupIds[x.group_id])submissions.push(x);});}
   var attempts=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'user_id',user.user_id);
   var grades=findMany_(LMS.SHEETS.GRADES,'user_id',user.user_id).filter(function(g){return asBool_(g.published);});
   var completedMap={};
@@ -46,16 +48,14 @@ function dashboardService_(request) {
     .map(function(a){return cleanObj_(a);});
   var announcements=rows_(LMS.SHEETS.ANNOUNCEMENTS).filter(function(a){return visible_(a.visible);})
     .sort(function(a,b){return new Date(b.published_at||b.updated_at)-new Date(a.published_at||a.updated_at);}).slice(0,4).map(cleanObj_);
-  var projectActs=activities.filter(function(a){return a.type==='project';});
-  var projectPlans=findMany_(LMS.SHEETS.PROJECT_PLANS,'user_id',user.user_id);
-  var pmap={};projectPlans.forEach(function(p){pmap[p.project_code]=p.status;});
+  var projectActs=activities.filter(function(a){return a.type==='project';}),projectPlans=findMany_(LMS.SHEETS.PROJECT_PLANS,'user_id',user.user_id),pmap={};
+  projectPlans.forEach(function(p){pmap[p.project_code]=p.status;});
+  if(Object.keys(groupIds).length){rows_(LMS.SHEETS.PROJECT_PLANS).forEach(function(p){if(groupIds[p.group_id])pmap[p.project_code]=p.status||'DRAFT';});}
   var projects=projectActs.map(function(a){return {activity_id:a.activity_id,title:a.title,project_code:a.project_code,status:pmap[a.project_code]||'Belum direncanakan'};});
   var total=activities.length,done=Object.keys(completedMap).length;
-  return {
-    stats:{progress:total?Math.min(100,Math.round(done/total*100)):0,activities:total,completed:done,graded:grades.length},
-    currentWeek:week?cleanObj_(week):null,upcoming:upcoming,announcements:announcements,projects:projects
-  };
+  return {stats:{progress:total?Math.min(100,Math.round(done/total*100)):0,activities:total,completed:done,graded:grades.length},currentWeek:week?cleanObj_(week):null,upcoming:upcoming,announcements:announcements,projects:projects};
 }
+
 function listWeeksService_(request) {
   requireUser_(request);
   var mats=rows_(LMS.SHEETS.MATERIALS),acts=rows_(LMS.SHEETS.ACTIVITIES);
@@ -105,13 +105,15 @@ function createPostService_(request,payload) {
   return cleanObj_(row);
 }
 function listTasksService_(request) {
-  var user=requireUser_(request),sub=findMany_(LMS.SHEETS.SUBMISSIONS,'user_id',user.user_id),attempts=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'user_id',user.user_id);
+  var user=requireUser_(request),sub=findMany_(LMS.SHEETS.SUBMISSIONS,'user_id',user.user_id),attempts=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'user_id',user.user_id),memberships=findMany_(LMS.SHEETS.GROUP_MEMBERS,'user_id',user.user_id),gids={};
+  memberships.forEach(function(m){gids[m.group_id]=true;});if(Object.keys(gids).length){rows_(LMS.SHEETS.SUBMISSIONS).forEach(function(x){if(gids[x.group_id])sub.push(x);});}
   var smap={};sub.forEach(function(s){smap[s.activity_id]=true;});
   var qcount={};attempts.forEach(function(at){var q=findOne_(LMS.SHEETS.QUIZZES,'quiz_id',at.quiz_id);if(q)qcount[q.activity_id]=(qcount[q.activity_id]||0)+1;});
-  return rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return visible_(a.visible)&&!legacyStaticActivity_(a)&&['assignment','checkpoint','reflection','peer_review','test','presentation','project','quiz'].indexOf(String(a.type))>=0;})
+  return rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return visible_(a.visible)&&!legacyStaticActivity_(a)&&['assignment','checkpoint','reflection','peer_review','test','presentation','quiz'].indexOf(String(a.type))>=0;})
     .sort(function(a,b){return String(a.week_id).localeCompare(String(b.week_id));})
     .map(function(a){return {activity_id:a.activity_id,week_id:a.week_id,type:a.type,title:a.title,max_score:num_(a.max_score),due_at:a.due_at,project_code:a.project_code,submitted:!!smap[a.activity_id],attempts:qcount[a.activity_id]||0};});
 }
+
 function taskDataService_(request,payload) {
   var user=requireUser_(request),a=activityById_(payload.activity_id);if(!a)throw new Error('Aktivitas tidak ditemukan.');
   if(a.type==='quiz')return {activity:cleanObj_(a),latest:null,grade:null,comments:[]};
@@ -175,29 +177,51 @@ function submitQuizService_(request,payload) {
   log_(user.user_id,'SUBMIT_QUIZ','quiz',q.quiz_id,{score:score,max:max,attempt:attemptNo});
   return {score:score,max_score:max,percentage:pct,attempt_no:attemptNo,feedback:asBool_(q.show_feedback)?feedback:[]};
 }
-function groupForUser_(userId,projectCode){
-  var memberships=findMany_(LMS.SHEETS.GROUP_MEMBERS,'user_id',userId),groups={};
+function projectActivityByCode_(projectCode){
+  var code=String(projectCode||'').toUpperCase();
+  return rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return a.type==='project'&&String(a.project_code||'').toUpperCase()===code;})[0]||null;
+}
+function groupContextForUser_(userId,projectCode){
+  var code=String(projectCode||'').toUpperCase(),memberships=findMany_(LMS.SHEETS.GROUP_MEMBERS,'user_id',userId),groups={};
   rows_(LMS.SHEETS.GROUPS).forEach(function(g){groups[g.group_id]=g;});
-  for(var i=0;i<memberships.length;i++){var g=groups[memberships[i].group_id];if(g&&String(g.project_code||'').toUpperCase()===String(projectCode||'').toUpperCase())return g;}
+  for(var i=0;i<memberships.length;i++){
+    var membership=memberships[i],g=groups[membership.group_id];
+    if(!g||String(g.project_code||'').toUpperCase()!==code)continue;
+    var memberRows=findMany_(LMS.SHEETS.GROUP_MEMBERS,'group_id',g.group_id),leaderId='',hasLeader=false;
+    memberRows.forEach(function(m){if(String(m.role||'').toLowerCase()==='leader'&&!hasLeader){leaderId=String(m.user_id);hasLeader=true;}});
+    if(!leaderId&&memberRows.length)leaderId=String(memberRows[0].user_id||'');
+    return {group:g,membership:membership,member_rows:memberRows,leader_id:leaderId,is_leader:String(userId)===leaderId,leader_missing:!hasLeader};
+  }
   return null;
 }
+function groupForUser_(userId,projectCode){var ctx=groupContextForUser_(userId,projectCode);return ctx?ctx.group:null;}
+function projectGroupMembersPublic_(ctx){
+  if(!ctx)return [];
+  var umap=userMap_();
+  return (ctx.member_rows||[]).map(function(m){var u=umap[m.user_id]||{};return {user_id:m.user_id,nim:u.nim||'',name:u.name||'',role:String(m.role||'member').toLowerCase()};});
+}
+function projectOwnerContext_(user,code){
+  var act=projectActivityByCode_(code),ctx=groupContextForUser_(user.user_id,code);
+  if(act&&String(act.mode||'').toLowerCase()==='group'&&!ctx)throw new Error('Anda belum ditempatkan pada kelompok untuk proyek ini.');
+  return {activity:act,group_ctx:ctx,group:ctx?ctx.group:null,is_group:!!ctx,can_edit:!ctx||ctx.is_leader};
+}
 function getProjectPlanService_(request,payload) {
-  var user=requireUser_(request),code=String(payload.project_code||'').toUpperCase(),act=rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return a.type==='project'&&String(a.project_code).toUpperCase()===code;})[0],group=act&&String(act.mode)==='group'?groupForUser_(user.user_id,code):null;
-  var plans=findMany_(LMS.SHEETS.PROJECT_PLANS,'project_code',code).filter(function(p){return group?p.group_id===group.group_id:p.user_id===user.user_id;});
-  return {plan:plans[0]?cleanObj_(plans[0]):null,group:group?cleanObj_(group):null};
+  var user=requireUser_(request),code=String(payload.project_code||'').toUpperCase(),owner=projectOwnerContext_(user,code),group=owner.group;
+  var plans=findMany_(LMS.SHEETS.PROJECT_PLANS,'project_code',code).filter(function(p){return group?p.group_id===group.group_id:p.user_id===user.user_id&&!p.group_id;});
+  return {plan:plans[0]?cleanObj_(plans[0]):null,group:group?cleanObj_(group):null,group_members:projectGroupMembersPublic_(owner.group_ctx),membership_role:owner.group_ctx?String(owner.group_ctx.membership.role||'member').toLowerCase():'individual',can_edit:owner.can_edit,is_group:owner.is_group,leader_id:owner.group_ctx?owner.group_ctx.leader_id:''};
 }
 function saveProjectPlanService_(request,payload) {
   var user=requireUser_(request),incoming=payload.plan||{},code=String(incoming.project_code||'').toUpperCase();
   if(!code)throw new Error('Project code wajib.');
-  var act=rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return a.type==='project'&&String(a.project_code).toUpperCase()===code;})[0];
-  var group=act&&String(act.mode)==='group'?groupForUser_(user.user_id,code):null;
-  if(act&&String(act.mode)==='group'&&!group)throw new Error('Anda belum ditempatkan pada kelompok untuk proyek ini.');
-  var existing=incoming.plan_id?findOne_(LMS.SHEETS.PROJECT_PLANS,'plan_id',incoming.plan_id):findMany_(LMS.SHEETS.PROJECT_PLANS,'project_code',code).filter(function(p){return group?p.group_id===group.group_id:p.user_id===user.user_id;})[0];
+  var owner=projectOwnerContext_(user,code),group=owner.group;
+  if(group&&!owner.can_edit)throw new Error('Perencanaan kelompok hanya dapat dibuat atau diubah oleh ketua kelompok. Semua anggota tetap dapat melihatnya.');
+  var existing=incoming.plan_id?findOne_(LMS.SHEETS.PROJECT_PLANS,'plan_id',incoming.plan_id):findMany_(LMS.SHEETS.PROJECT_PLANS,'project_code',code).filter(function(p){return group?p.group_id===group.group_id:p.user_id===user.user_id&&!p.group_id;})[0];
+  if(existing&&group&&String(existing.group_id||'')!==String(group.group_id))throw new Error('Perencanaan tidak sesuai dengan kelompok Anda.');
   var status=existing?String(existing.status||'DRAFT'):'DRAFT';
   if(['APPROVED','IN_PRODUCTION','DONE'].indexOf(status)>=0)throw new Error('Perencanaan sudah dikunci oleh dosen.');
   var submit=asBool_(payload.submit);
   var row={
-    plan_id:existing?existing.plan_id:makeId_('PLAN'),project_code:code,user_id:user.user_id,group_id:group?group.group_id:String(incoming.group_id||''),
+    plan_id:existing?existing.plan_id:makeId_('PLAN'),project_code:code,user_id:user.user_id,group_id:group?group.group_id:'',
     title:String(incoming.title||''),theme_code:String(incoming.theme_code||''),topic:String(incoming.topic||''),maharah_json:String(incoming.maharah_json||'[]'),
     target_users_html:sanitizeHtml_(incoming.target_users_html),problem_html:sanitizeHtml_(incoming.problem_html),objectives_html:sanitizeHtml_(incoming.objectives_html),
     features_html:sanitizeHtml_(incoming.features_html),flow_html:sanitizeHtml_(incoming.flow_html),technology_html:sanitizeHtml_(incoming.technology_html),
@@ -205,8 +229,29 @@ function saveProjectPlanService_(request,payload) {
     status:submit?'UNDER_REVIEW':'DRAFT',revision_no:existing?num_(existing.revision_no,1):1,
     lecturer_feedback_html:existing?existing.lecturer_feedback_html:'',submitted_at:submit?nowIso_():(existing?existing.submitted_at:''),approved_at:existing?existing.approved_at:'',updated_at:nowIso_()
   };
-  upsertObj_(LMS.SHEETS.PROJECT_PLANS,'plan_id',row);log_(user.user_id,submit?'SUBMIT_PROJECT_PLAN':'SAVE_PROJECT_PLAN','project_plan',row.plan_id,{project_code:code});
-  return {plan:cleanObj_(row)};
+  upsertObj_(LMS.SHEETS.PROJECT_PLANS,'plan_id',row);log_(user.user_id,submit?'SUBMIT_PROJECT_PLAN':'SAVE_PROJECT_PLAN','project_plan',row.plan_id,{project_code:code,group_id:row.group_id});
+  return {plan:cleanObj_(row),group:group?cleanObj_(group):null,can_edit:owner.can_edit};
+}
+function getProjectFinalReportService_(request,payload){
+  var user=requireUser_(request),code=String(payload.project_code||'').toUpperCase(),owner=projectOwnerContext_(user,code),a=owner.activity;
+  if(!a)throw new Error('Aktivitas proyek tidak ditemukan.');
+  var subs=findMany_(LMS.SHEETS.SUBMISSIONS,'activity_id',a.activity_id).filter(function(s){return owner.group?String(s.group_id||'')===String(owner.group.group_id):String(s.user_id||'')===String(user.user_id)&&!s.group_id;}).sort(function(x,y){return num_(y.version)-num_(x.version);});
+  var latest=subs[0]||null,comments=latest?findMany_(LMS.SHEETS.COMMENTS,'entity_id',latest.submission_id).filter(function(c){return c.entity_type==='submission';}):[],umap=userMap_();
+  comments=comments.map(function(c){var x=cleanObj_(c);x.author=umap[c.user_id]||null;return x;});
+  var grades=findMany_(LMS.SHEETS.GRADES,'activity_id',a.activity_id).filter(function(g){return g.user_id===user.user_id&&asBool_(g.published);}).sort(function(x,y){return new Date(y.graded_at)-new Date(x.graded_at);});
+  return {activity:cleanObj_(a),report:latest?cleanObj_(latest):null,comments:comments,grade:grades[0]?cleanObj_(grades[0]):null,group:owner.group?cleanObj_(owner.group):null,group_members:projectGroupMembersPublic_(owner.group_ctx),can_edit:owner.can_edit,is_group:owner.is_group,membership_role:owner.group_ctx?String(owner.group_ctx.membership.role||'member').toLowerCase():'individual'};
+}
+function saveProjectFinalReportService_(request,payload){
+  var user=requireUser_(request),code=String(payload.project_code||'').toUpperCase(),owner=projectOwnerContext_(user,code),a=owner.activity;
+  if(!a)throw new Error('Aktivitas proyek tidak ditemukan.');
+  if(owner.group&&!owner.can_edit)throw new Error('Laporan akhir kelompok hanya dapat dikirim oleh ketua kelompok.');
+  var existing=findMany_(LMS.SHEETS.SUBMISSIONS,'activity_id',a.activity_id).filter(function(s){return owner.group?String(s.group_id||'')===String(owner.group.group_id):String(s.user_id||'')===String(user.user_id)&&!s.group_id;});
+  var version=existing.reduce(function(m,s){return Math.max(m,num_(s.version));},0)+1,fileUrl='',fileName='';
+  if(payload.file_base64){var up=uploadBase64_({base64:payload.file_base64,file_name:payload.file_name,file_mime:payload.file_mime,category:'submissions'});fileUrl=up.url;fileName=up.name;}
+  var content=sanitizeHtml_(payload.content_html),link=String(payload.link_url||'').trim();
+  if(!content.replace(/<[^>]+>/g,'').trim()&&!link&&!fileUrl)throw new Error('Isi laporan, tautan produk, atau file wajib diisi.');
+  var row={submission_id:makeId_('SUB'),activity_id:a.activity_id,user_id:user.user_id,group_id:owner.group?owner.group.group_id:'',version:version,content_html:content,link_url:link,file_name:fileName,file_url:fileUrl,status:'submitted',submitted_at:nowIso_(),updated_at:nowIso_()};
+  appendObj_(LMS.SHEETS.SUBMISSIONS,row);log_(user.user_id,'SUBMIT_PROJECT_FINAL','project',code,{version:version,group_id:row.group_id});return cleanObj_(row);
 }
 function uploadAssetService_(request,payload) {
   requireUser_(request);return uploadBase64_(payload);
@@ -280,31 +325,36 @@ function adminResetPin_(request,payload){
 function adminImportUsers_(request,payload){
   var admin=requireAdmin_(request),incoming=payload.rows||[],mode=String(payload.duplicate_mode||'skip').toLowerCase();
   if(!Array.isArray(incoming))throw new Error('Data import user tidak valid.');
-  if(incoming.length>500)throw new Error('Maksimal 500 user per import.');
+  if(incoming.length>150)throw new Error('Maksimal 150 user per batch. Frontend akan membagi file besar secara otomatis.');
   if(['skip','update'].indexOf(mode)<0)mode='skip';
-  var existing=rows_(LMS.SHEETS.USERS),byNim={},byEmail={};
-  existing.forEach(function(u){var n=String(u.nim||'').trim().toLowerCase(),e=String(u.email||'').trim().toLowerCase();if(n)byNim[n]=u;if(e)byEmail[e]=u;});
-  var seen={},report={inserted:0,updated:0,skipped:0,errors:[],generatedPins:[]};
+  var sh=sheet_(LMS.SHEETS.USERS),headers=sheetHeaders_(LMS.SHEETS.USERS),last=sh.getLastRow(),values=last>=2?sh.getRange(2,1,last-1,headers.length).getValues():[];
+  var col={};headers.forEach(function(h,i){col[h]=i;});
+  var byNim={},byEmail={};
+  values.forEach(function(row,i){var n=String(row[col.nim]||'').trim().toLowerCase(),e=String(row[col.email]||'').trim().toLowerCase();if(n)byNim[n]=i;if(e)byEmail[e]=i;});
+  var seen={},report={inserted:0,updated:0,skipped:0,errors:[],generatedPins:[]},now=nowIso_();
   incoming.forEach(function(raw,idx){
     try{
       raw=raw||{};var nim=String(raw.nim||'').trim(),name=String(raw.name||'').trim(),email=String(raw.email||'').trim(),className=String(raw.class_name||'').trim(),pin=String(raw.initial_pin||'').trim();
       if(!nim)throw new Error('NIM wajib diisi.');if(!name)throw new Error('Nama wajib diisi.');
-      var key=nim.toLowerCase();if(seen[key]){report.skipped++;report.errors.push('Baris '+(idx+2)+': NIM '+nim+' duplikat di file.');return;}seen[key]=true;
+      var key=nim.toLowerCase();if(seen[key]){report.skipped++;report.errors.push('Baris '+(idx+2)+': NIM '+nim+' duplikat di batch.');return;}seen[key]=true;
       if(pin&&pin.length<6)throw new Error('initial_pin minimal 6 karakter.');
-      var found=byNim[key]||(email?byEmail[email.toLowerCase()]:null),now=nowIso_(),active=(raw.active===''||raw.active===undefined||raw.active===null)?true:asBool_(raw.active);
-      if(found){
-        if(['admin','dosen'].indexOf(String(found.role).toLowerCase())>=0)throw new Error('NIM/email milik akun '+found.role+' dan tidak boleh ditimpa lewat import mahasiswa.');
+      var foundIndex=byNim[key];if(foundIndex===undefined&&email)foundIndex=byEmail[email.toLowerCase()];
+      var active=(raw.active===''||raw.active===undefined||raw.active===null)?true:asBool_(raw.active);
+      if(foundIndex!==undefined){
+        var existing=rowObject_(headers,values[foundIndex]);
+        if(['admin','dosen'].indexOf(String(existing.role||'').toLowerCase())>=0)throw new Error('NIM/email milik akun '+existing.role+' dan tidak boleh ditimpa lewat import mahasiswa.');
         if(mode==='skip'){report.skipped++;return;}
-        var update={nim:nim,name:name,email:email,class_name:className,role:'mahasiswa',active:active,updated_at:now};
-        if(pin){var hp=makeUserPin_(pin);update.pin_salt=hp.salt;update.pin_hash=hp.hash;}
-        updateRowObj_(LMS.SHEETS.USERS,found.__row,update);report.updated++;
+        values[foundIndex][col.nim]=nim;values[foundIndex][col.name]=name;values[foundIndex][col.email]=email;values[foundIndex][col.class_name]=className;values[foundIndex][col.role]='mahasiswa';values[foundIndex][col.active]=active;values[foundIndex][col.updated_at]=now;
+        if(pin){var hp=makeUserPin_(pin);values[foundIndex][col.pin_salt]=hp.salt;values[foundIndex][col.pin_hash]=hp.hash;}
+        byNim[key]=foundIndex;if(email)byEmail[email.toLowerCase()]=foundIndex;report.updated++;
       }else{
-        if(!pin)pin=String(Math.floor(100000+Math.random()*900000));
-        var hp2=makeUserPin_(pin),row={user_id:makeId_('USR'),nim:nim,name:name,email:email,role:'mahasiswa',class_name:className,pin_salt:hp2.salt,pin_hash:hp2.hash,active:active,created_at:now,updated_at:now};
-        appendObj_(LMS.SHEETS.USERS,row);var created=findOne_(LMS.SHEETS.USERS,'user_id',row.user_id)||row;byNim[key]=created;if(email)byEmail[email.toLowerCase()]=created;report.inserted++;report.generatedPins.push({nim:nim,name:name,pin:pin});
+        var generated=false;if(!pin){pin=String(Math.floor(100000+Math.random()*900000));generated=true;}
+        var hp2=makeUserPin_(pin),rowObj={user_id:makeId_('USR'),nim:nim,name:name,email:email,role:'mahasiswa',class_name:className,pin_salt:hp2.salt,pin_hash:hp2.hash,active:active,created_at:now,updated_at:now};
+        var row=headers.map(function(h){return rowObj[h]===undefined?'':rowObj[h];}),newIndex=values.length;values.push(row);byNim[key]=newIndex;if(email)byEmail[email.toLowerCase()]=newIndex;report.inserted++;if(generated)report.generatedPins.push({nim:nim,name:name,pin:pin});
       }
-    }catch(err){report.errors.push('Baris '+(idx+2)+': '+err.message);}
+    }catch(err){report.errors.push('Baris '+(idx+2)+': '+(err&&err.message?err.message:err));}
   });
+  if(values.length)sh.getRange(2,1,values.length,headers.length).setValues(values);SpreadsheetApp.flush();
   log_(admin.user_id,'IMPORT_USERS_XLSX','system','',{inserted:report.inserted,updated:report.updated,skipped:report.skipped,errors:report.errors.length});return report;
 }
 
@@ -315,21 +365,72 @@ function adminSaveAnnouncement_(request,payload){
   upsertObj_(LMS.SHEETS.ANNOUNCEMENTS,'announcement_id',row);log_(admin.user_id,'SAVE_ANNOUNCEMENT','announcement',id,{});return {announcement:cleanObj_(row)};
 }
 function adminListGroups_(request){
-  requireAdmin_(request);var members=rows_(LMS.SHEETS.GROUP_MEMBERS);
-  return rows_(LMS.SHEETS.GROUPS).map(function(g){var c=cleanObj_(g);c.member_ids=members.filter(function(m){return m.group_id===g.group_id;}).map(function(m){return m.user_id;});return c;});
+  requireAdmin_(request);var members=rows_(LMS.SHEETS.GROUP_MEMBERS),umap=userMap_();
+  return rows_(LMS.SHEETS.GROUPS).map(function(g){
+    var c=cleanObj_(g),gm=members.filter(function(m){return m.group_id===g.group_id;});
+    c.member_ids=gm.map(function(m){return m.user_id;});
+    c.leader_id='';
+    c.members=gm.map(function(m){var u=umap[m.user_id]||{};if(String(m.role||'').toLowerCase()==='leader')c.leader_id=m.user_id;return {user_id:m.user_id,nim:u.nim||'',name:u.name||'',role:String(m.role||'member').toLowerCase()};});
+    if(!c.leader_id&&c.member_ids.length)c.leader_id=c.member_ids[0];
+    return c;
+  }).sort(function(a,b){var pc=String(a.project_code).localeCompare(String(b.project_code));return pc||String(a.name).localeCompare(String(b.name));});
 }
 function adminSaveGroup_(request,payload){
-  var admin=requireAdmin_(request),g=payload.group||{},id=String(g.group_id||makeId_('GRP')),now=nowIso_();
-  var existing=findOne_(LMS.SHEETS.GROUPS,'group_id',id);
-  upsertObj_(LMS.SHEETS.GROUPS,'group_id',{group_id:id,project_code:String(g.project_code||'AUDIOVISUAL'),name:String(g.name||'Kelompok'),created_at:existing?existing.created_at:now,updated_at:now});
-  var old=findMany_(LMS.SHEETS.GROUP_MEMBERS,'group_id',id).sort(function(a,b){return b.__row-a.__row;});old.forEach(function(m){sheet_(LMS.SHEETS.GROUP_MEMBERS).deleteRow(m.__row);});
-  (g.member_ids||[]).forEach(function(uid){appendObj_(LMS.SHEETS.GROUP_MEMBERS,{membership_id:makeId_('MEM'),group_id:id,user_id:String(uid),role:'member',created_at:now});});
-  log_(admin.user_id,'SAVE_GROUP','group',id,{});return {group:{group_id:id,project_code:g.project_code,name:g.name,member_ids:g.member_ids||[]}};
+  var admin=requireAdmin_(request),g=payload.group||{},code=String(g.project_code||'AUDIOVISUAL').toUpperCase(),validCodes=['WEBSITE','PWA','AUDIO','VISUAL','AUDIOVISUAL'];
+  if(validCodes.indexOf(code)<0)throw new Error('Kode proyek tidak valid.');
+  var id=String(g.group_id||makeId_('GRP')),name=String(g.name||'').trim();if(!name)throw new Error('Nama kelompok wajib.');
+  var memberIds=(g.member_ids||[]).map(String).filter(Boolean),seen={};memberIds=memberIds.filter(function(uid){if(seen[uid])return false;seen[uid]=true;return true;});
+  var leaderId=String(g.leader_id||'');if(memberIds.length&&!leaderId)leaderId=memberIds[0];if(leaderId&&memberIds.indexOf(leaderId)<0)throw new Error('Ketua harus menjadi anggota kelompok.');
+  var users=userMap_();memberIds.forEach(function(uid){if(!users[uid]||String(users[uid].role)!=='mahasiswa')throw new Error('Anggota kelompok tidak valid: '+uid);});
+  var allGroups=rows_(LMS.SHEETS.GROUPS),groupMap={};allGroups.forEach(function(x){groupMap[x.group_id]=x;});
+  var allMembers=rows_(LMS.SHEETS.GROUP_MEMBERS);
+  memberIds.forEach(function(uid){allMembers.forEach(function(m){var other=groupMap[m.group_id];if(other&&String(other.project_code||'').toUpperCase()===code&&String(m.user_id)===uid&&String(m.group_id)!==id)throw new Error((users[uid]?users[uid].name:uid)+' sudah berada di '+other.name+' untuk proyek '+code+'.');});});
+  var now=nowIso_(),existing=groupMap[id];
+  upsertObj_(LMS.SHEETS.GROUPS,'group_id',{group_id:id,project_code:code,name:name,created_at:existing?existing.created_at:now,updated_at:now});
+  var kept=allMembers.filter(function(m){return String(m.group_id)!==id;}).map(cleanObj_);
+  memberIds.forEach(function(uid){kept.push({membership_id:makeId_('MEM'),group_id:id,user_id:uid,role:uid===leaderId?'leader':'member',created_at:now});});
+  rewriteRows_(LMS.SHEETS.GROUP_MEMBERS,kept);SpreadsheetApp.flush();
+  log_(admin.user_id,'SAVE_GROUP','group',id,{project_code:code,leader_id:leaderId,members:memberIds.length});return {group:{group_id:id,project_code:code,name:name,member_ids:memberIds,leader_id:leaderId}};
 }
+function adminImportGroups_(request,payload){
+  var admin=requireAdmin_(request),code=String(payload.project_code||'').toUpperCase(),incoming=payload.rows||[],validCodes=['WEBSITE','PWA','AUDIO','VISUAL','AUDIOVISUAL'];
+  if(validCodes.indexOf(code)<0)throw new Error('Pilih salah satu dari 5 proyek yang valid.');
+  if(!Array.isArray(incoming)||!incoming.length)throw new Error('Data kelompok kosong.');if(incoming.length>500)throw new Error('Maksimal 500 baris anggota per import.');
+  var users=rows_(LMS.SHEETS.USERS).filter(function(u){return String(u.role)==='mahasiswa'&&asBool_(u.active);}),byNim={};users.forEach(function(u){byNim[String(u.nim||'').trim().toLowerCase()]=u;});
+  var seenNim={},fileGroups={},errors=[];
+  incoming.forEach(function(raw,idx){raw=raw||{};var name=String(raw.group_name||raw.name||'').trim(),nim=String(raw.nim||'').trim(),role=String(raw.role||'MEMBER').trim().toUpperCase();
+    if(!name)errors.push('Baris '+(idx+2)+': group_name wajib.');if(!nim)errors.push('Baris '+(idx+2)+': nim wajib.');if(['LEADER','MEMBER'].indexOf(role)<0)errors.push('Baris '+(idx+2)+': role harus LEADER atau MEMBER.');
+    var key=nim.toLowerCase(),u=byNim[key];if(nim&&!u)errors.push('Baris '+(idx+2)+': NIM '+nim+' tidak ditemukan/aktif sebagai mahasiswa.');
+    if(nim&&seenNim[key])errors.push('Baris '+(idx+2)+': NIM '+nim+' muncul lebih dari sekali dalam file.');if(nim)seenNim[key]=true;
+    if(name&&nim&&u&&['LEADER','MEMBER'].indexOf(role)>=0){var gkey=name.toLowerCase();if(!fileGroups[gkey])fileGroups[gkey]={name:name,members:[],leaders:0};fileGroups[gkey].members.push({user_id:u.user_id,nim:nim,role:role.toLowerCase()});if(role==='LEADER')fileGroups[gkey].leaders++;}
+  });
+  Object.keys(fileGroups).forEach(function(k){var g=fileGroups[k];if(g.leaders!==1)errors.push('Kelompok "'+g.name+'" harus memiliki tepat satu LEADER (ditemukan '+g.leaders+').');});
+  if(errors.length)throw new Error('Import kelompok dibatalkan. '+errors.slice(0,12).join(' | ')+(errors.length>12?' | +'+(errors.length-12)+' error lain':''));
+  var existingGroups=rows_(LMS.SHEETS.GROUPS),existingMembers=rows_(LMS.SHEETS.GROUP_MEMBERS),projectGroups=existingGroups.filter(function(g){return String(g.project_code||'').toUpperCase()===code;}),byName={};projectGroups.forEach(function(g){byName[String(g.name||'').trim().toLowerCase()]=g;});
+  var referenced={};rows_(LMS.SHEETS.PROJECT_PLANS).forEach(function(p){if(p.group_id)referenced[p.group_id]=true;});rows_(LMS.SHEETS.SUBMISSIONS).forEach(function(x){if(x.group_id)referenced[x.group_id]=true;});
+  var now=nowIso_(),importedIds={},created=0,reused=0,newGroups=[];
+  Object.keys(fileGroups).forEach(function(k){var fg=fileGroups[k],old=byName[k],id=old?old.group_id:makeId_('GRP');if(old)reused++;else created++;importedIds[id]=true;newGroups.push({group_id:id,project_code:code,name:fg.name,created_at:old?old.created_at:now,updated_at:now,_members:fg.members});});
+  var finalGroups=[];existingGroups.forEach(function(g){var isProject=String(g.project_code||'').toUpperCase()===code;if(!isProject){finalGroups.push(cleanObj_(g));return;}if(importedIds[g.group_id])return;if(referenced[g.group_id])finalGroups.push(cleanObj_(g));});newGroups.forEach(function(g){finalGroups.push({group_id:g.group_id,project_code:g.project_code,name:g.name,created_at:g.created_at,updated_at:g.updated_at});});
+  var projectGroupIds={};projectGroups.forEach(function(g){projectGroupIds[g.group_id]=true;});newGroups.forEach(function(g){projectGroupIds[g.group_id]=true;});
+  var finalMembers=existingMembers.filter(function(m){return !projectGroupIds[m.group_id];}).map(cleanObj_),memberCount=0;
+  newGroups.forEach(function(g){g._members.forEach(function(m){finalMembers.push({membership_id:makeId_('MEM'),group_id:g.group_id,user_id:m.user_id,role:m.role,created_at:now});memberCount++;});});
+  rewriteRows_(LMS.SHEETS.GROUPS,finalGroups);rewriteRows_(LMS.SHEETS.GROUP_MEMBERS,finalMembers);SpreadsheetApp.flush();
+  var warnings=[];projectGroups.forEach(function(g){if(!importedIds[g.group_id]&&referenced[g.group_id])warnings.push(g.name+' dipertahankan karena sudah memiliki perencanaan/laporan, tetapi anggotanya dikosongkan oleh import baru.');});
+  var report={project_code:code,groups:Object.keys(fileGroups).length,members:memberCount,created_groups:created,reused_groups:reused,warnings:warnings};
+  log_(admin.user_id,'IMPORT_GROUPS_XLSX','system',code,report);return report;
+}
+
 function adminListProjectPlans_(request){
-  requireAdmin_(request);var umap=userMap_(),groups={};rows_(LMS.SHEETS.GROUPS).forEach(function(g){groups[g.group_id]=g.name;});
-  return rows_(LMS.SHEETS.PROJECT_PLANS).sort(function(a,b){return new Date(b.updated_at)-new Date(a.updated_at);}).map(function(p){var c=cleanObj_(p),u=umap[p.user_id];c.owner_name=u?u.name:'';c.owner_nim=u?u.nim:'';c.group_name=groups[p.group_id]||'';return c;});
+  requireAdmin_(request);var umap=userMap_(),groups={},membersByGroup={};
+  rows_(LMS.SHEETS.GROUPS).forEach(function(g){groups[g.group_id]=g.name;});
+  rows_(LMS.SHEETS.GROUP_MEMBERS).forEach(function(m){if(!membersByGroup[m.group_id])membersByGroup[m.group_id]=[];membersByGroup[m.group_id].push(m);});
+  return rows_(LMS.SHEETS.PROJECT_PLANS).sort(function(a,b){return new Date(b.updated_at)-new Date(a.updated_at);}).map(function(p){
+    var c=cleanObj_(p),owner=umap[p.user_id],gm=membersByGroup[p.group_id]||[],leader=null;
+    if(p.group_id){leader=gm.filter(function(m){return String(m.role||'').toLowerCase()==='leader';})[0]||gm[0]||null;if(leader&&umap[leader.user_id])owner=umap[leader.user_id];}
+    c.owner_name=owner?owner.name:'';c.owner_nim=owner?owner.nim:'';c.group_name=groups[p.group_id]||'';return c;
+  });
 }
+
 function adminReviewProjectPlan_(request,payload){
   var admin=requireAdmin_(request),p=findOne_(LMS.SHEETS.PROJECT_PLANS,'plan_id',payload.plan_id);if(!p)throw new Error('Perencanaan tidak ditemukan.');
   var status=String(payload.status||'UNDER_REVIEW'),update={status:status,lecturer_feedback_html:sanitizeHtml_(payload.feedback_html),updated_at:nowIso_()};
@@ -344,12 +445,18 @@ function adminActivityRoster_(request,payload){
   requireAdmin_(request);var a=activityById_(payload.activity_id);if(!a)throw new Error('Aktivitas tidak ditemukan.');
   var users=rows_(LMS.SHEETS.USERS).filter(function(u){return String(u.role)==='mahasiswa'&&asBool_(u.active);});
   var grades=findMany_(LMS.SHEETS.GRADES,'activity_id',a.activity_id),subs=findMany_(LMS.SHEETS.SUBMISSIONS,'activity_id',a.activity_id),d=a.type==='discussion'?discussionByActivity_(a.activity_id):null,posts=d?findMany_(LMS.SHEETS.POSTS,'discussion_id',d.discussion_id):[];
+  var projectUserGroup={};
+  if(a.type==='project'){
+    var groups={};rows_(LMS.SHEETS.GROUPS).forEach(function(g){if(String(g.project_code||'').toUpperCase()===String(a.project_code||'').toUpperCase())groups[g.group_id]=true;});
+    rows_(LMS.SHEETS.GROUP_MEMBERS).forEach(function(m){if(groups[m.group_id])projectUserGroup[m.user_id]=m.group_id;});
+  }
   return users.map(function(u){
-    var gs=grades.filter(function(g){return g.user_id===u.user_id;}).sort(function(x,y){return new Date(y.graded_at)-new Date(x.graded_at);});
-    var ss=subs.filter(function(s){return s.user_id===u.user_id;}).sort(function(x,y){return num_(y.version)-num_(x.version);});
-    return {user:safeUser_(u),grade:gs[0]?cleanObj_(gs[0]):null,submission:ss[0]?cleanObj_(ss[0]):null,post_count:d?posts.filter(function(p){return p.user_id===u.user_id&&String(p.status||'active')!=='deleted';}).length:undefined};
+    var gs=grades.filter(function(g){return g.user_id===u.user_id;}).sort(function(x,y){return new Date(y.graded_at)-new Date(x.graded_at);}),gid=projectUserGroup[u.user_id]||'';
+    var ss=subs.filter(function(s){return gid?String(s.group_id||'')===String(gid):s.user_id===u.user_id&&!s.group_id;}).sort(function(x,y){return num_(y.version)-num_(x.version);});
+    return {user:safeUser_(u),grade:gs[0]?cleanObj_(gs[0]):null,submission:ss[0]?cleanObj_(ss[0]):null,post_count:d?posts.filter(function(p){return p.user_id===u.user_id&&String(p.status||'active')!=='deleted';}).length:undefined,group_id:gid};
   });
 }
+
 function adminAddSubmissionComment_(request,payload){
   var admin=requireAdmin_(request),submissionId=String(payload.submission_id||'');
   if(!submissionId)throw new Error('Submission tidak tersedia untuk dikomentari.');
@@ -360,17 +467,13 @@ function adminAddSubmissionComment_(request,payload){
 }
 function adminSaveGrade_(request,payload){
   var admin=requireAdmin_(request),a=activityById_(payload.activity_id);if(!a)throw new Error('Aktivitas tidak ditemukan.');
-  var existing=findMany_(LMS.SHEETS.GRADES,'activity_id',a.activity_id).filter(function(g){return g.user_id===payload.user_id;})[0],id=existing?existing.grade_id:makeId_('GRD'),now=nowIso_();
-  var row={grade_id:id,activity_id:a.activity_id,user_id:String(payload.user_id),submission_id:String(payload.submission_id||''),score:num_(payload.score),max_score:num_(a.max_score,100),feedback_html:sanitizeHtml_(payload.feedback_html),published:payload.published!==false,graded_by:admin.user_id,graded_at:now,updated_at:now};
-  upsertObj_(LMS.SHEETS.GRADES,'grade_id',row);
-  if(payload.submission_id){
-    var s=findOne_(LMS.SHEETS.SUBMISSIONS,'submission_id',payload.submission_id);
-    if(s&&payload.feedback_html){
-      appendObj_(LMS.SHEETS.COMMENTS,{comment_id:makeId_('CMT'),entity_type:'submission',entity_id:s.submission_id,user_id:admin.user_id,parent_comment_id:'',content_html:sanitizeHtml_(payload.feedback_html),created_at:now,updated_at:now});
-    }
-  }
-  log_(admin.user_id,'SAVE_GRADE','activity',a.activity_id,{user_id:payload.user_id,score:row.score});return cleanObj_(row);
+  var now=nowIso_(),targets=[String(payload.user_id)],submission=null;
+  if(payload.submission_id){submission=findOne_(LMS.SHEETS.SUBMISSIONS,'submission_id',payload.submission_id);if(submission&&a.type==='project'&&submission.group_id){targets=findMany_(LMS.SHEETS.GROUP_MEMBERS,'group_id',submission.group_id).map(function(m){return String(m.user_id);});if(!targets.length)targets=[String(payload.user_id)];}}
+  var saved=[];targets.forEach(function(uid){var existing=findMany_(LMS.SHEETS.GRADES,'activity_id',a.activity_id).filter(function(g){return g.user_id===uid;})[0],id=existing?existing.grade_id:makeId_('GRD');var row={grade_id:id,activity_id:a.activity_id,user_id:uid,submission_id:String(payload.submission_id||''),score:num_(payload.score),max_score:num_(a.max_score,100),feedback_html:sanitizeHtml_(payload.feedback_html),published:payload.published!==false,graded_by:admin.user_id,graded_at:now,updated_at:now};upsertObj_(LMS.SHEETS.GRADES,'grade_id',row);saved.push(cleanObj_(row));});
+  if(submission&&payload.feedback_html){appendObj_(LMS.SHEETS.COMMENTS,{comment_id:makeId_('CMT'),entity_type:'submission',entity_id:submission.submission_id,user_id:admin.user_id,parent_comment_id:'',content_html:sanitizeHtml_(payload.feedback_html),created_at:now,updated_at:now});}
+  log_(admin.user_id,'SAVE_GRADE','activity',a.activity_id,{user_ids:targets,score:num_(payload.score),group_applied:targets.length>1});return saved[0];
 }
+
 function adminSeedBundledContent_(request,payload){
   var admin=requireAdmin_(request),counts={materials:0,quizzes:0,discussions:0},now=nowIso_();
   var materials=[],activities=[],quizzes=[],questions=[],discussions=[];

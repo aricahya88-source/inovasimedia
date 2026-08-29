@@ -27,7 +27,7 @@ function normalizeRow(raw:Record<string,unknown>):ImportRow{
 
 export default function AdminUsers(){
   const[rows,setRows]=useState<U[]>([]);const[u,setU]=useState<U>(empty);const[msg,setMsg]=useState('');
-  const[importRows,setImportRows]=useState<ImportRow[]>([]);const[importName,setImportName]=useState('');const[mode,setMode]=useState<'skip'|'update'>('skip');const[importBusy,setImportBusy]=useState(false);const[report,setReport]=useState<ImportReport|null>(null);
+  const[importRows,setImportRows]=useState<ImportRow[]>([]);const[importName,setImportName]=useState('');const[mode,setMode]=useState<'skip'|'update'>('skip');const[importBusy,setImportBusy]=useState(false);const[report,setReport]=useState<ImportReport|null>(null);const[importProgress,setImportProgress]=useState({done:0,total:0,batch:0,batches:0});
   const load=()=>api<U[]>('adminListUsers').then(setRows);
   useEffect(()=>{load().catch(e=>setMsg(e.message));},[]);
   const save=async()=>{try{const d=await api<{user:U;temporary_pin?:string}>('adminSaveUser',{user:u});setU(d.user);setMsg(d.temporary_pin?`Pengguna tersimpan. PIN sementara: ${d.temporary_pin}`:'Pengguna tersimpan.');await load()}catch(e){setMsg(e instanceof Error?e.message:String(e))}};
@@ -53,8 +53,23 @@ export default function AdminUsers(){
   };
   const runImport=async()=>{
     if(!importRows.length)return;setImportBusy(true);setMsg('');setReport(null);
-    try{const r=await api<ImportReport>('adminImportUsers',{rows:importRows,duplicate_mode:mode});setReport(r);setMsg(`Import selesai: ${r.inserted} baru, ${r.updated} diperbarui, ${r.skipped} dilewati.`);await load();}
-    catch(e){setMsg(e instanceof Error?e.message:String(e))}finally{setImportBusy(false)}
+    const valid=importRows.filter(x=>x.nim&&x.name),chunkSize=50,chunks:ImportRow[][]=[];let processed=0;
+    for(let i=0;i<valid.length;i+=chunkSize)chunks.push(valid.slice(i,i+chunkSize));
+    const total:ImportReport={inserted:0,updated:0,skipped:0,errors:[],generatedPins:[]};
+    setImportProgress({done:0,total:valid.length,batch:0,batches:chunks.length});
+    try{
+      for(let i=0;i<chunks.length;i++){
+        setImportProgress({done:i*chunkSize,total:valid.length,batch:i+1,batches:chunks.length});
+        const r=await api<ImportReport>('adminImportUsers',{rows:chunks[i],duplicate_mode:mode});
+        total.inserted+=r.inserted;total.updated+=r.updated;total.skipped+=r.skipped;total.errors.push(...r.errors);total.generatedPins.push(...r.generatedPins);
+        processed=Math.min(valid.length,(i+1)*chunkSize);setImportProgress({done:processed,total:valid.length,batch:i+1,batches:chunks.length});
+      }
+      setReport(total);setMsg(`Import selesai: ${total.inserted} baru, ${total.updated} diperbarui, ${total.skipped} dilewati.`);await load();
+    }catch(e){setReport(total);setMsg(`Import berhenti setelah ${processed} user. ${e instanceof Error?e.message:String(e)}`)}finally{setImportBusy(false)}
+  };
+  const downloadGeneratedPins=async()=>{
+    if(!report?.generatedPins.length)return;
+    const XLSX=await import('xlsx');const ws=XLSX.utils.json_to_sheet(report.generatedPins.map(x=>({nim:x.nim,name:x.name,pin:x.pin})));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'PIN Otomatis');XLSX.writeFile(wb,`PIN_Import_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
   return <AuthGate adminOnly><AppShell title="Pengguna"><div className="stack">
@@ -62,9 +77,10 @@ export default function AdminUsers(){
       {importRows.length>0&&<div className="stack small-gap"><div className="notice"><div className="row wrap gap"><FileSpreadsheet/><strong>{importName}</strong><span className="badge success"><CheckCircle2/> {validCount} valid</span>{duplicateCount>0&&<span className="badge"><AlertTriangle/> {duplicateCount} NIM sudah ada</span>}{invalidCount>0&&<span className="badge danger">{invalidCount} tidak lengkap</span>}</div></div>
         <div className="form-grid two"><label className="field"><span>Jika NIM sudah ada</span><select value={mode} onChange={e=>setMode(e.target.value as 'skip'|'update')}><option value="skip">Lewati user lama</option><option value="update">Perbarui data user lama</option></select></label><div className="field"><span>Kolom yang dibaca</span><div className="small-note">nim, name, email, class_name, initial_pin, active</div></div></div>
         <div className="scroll-list">{importRows.slice(0,8).map((x,i)=><div className="select-row" key={`${x.nim}-${i}`}><strong>{x.name||'(nama kosong)'}</strong><small>{x.nim||'(NIM kosong)'} • {x.class_name||'tanpa kelas'} • {existingNims.has(x.nim.toLowerCase())?'sudah ada':'baru'}</small></div>)}{importRows.length>8&&<div className="small-note">+ {importRows.length-8} baris lain</div>}</div>
+        {importBusy&&<div className="import-progress"><div className="row between"><strong>Mengimpor mahasiswa</strong><span>{importProgress.done}/{importProgress.total}</span></div><div className="progress-track"><span style={{width:`${importProgress.total?Math.round(importProgress.done/importProgress.total*100):0}%`}}/></div><small>Batch {importProgress.batch} dari {importProgress.batches}. Jangan tutup halaman sampai selesai.</small></div>}
         <div className="right-actions"><button className="button primary" disabled={importBusy||validCount===0} onClick={runImport}><FileSpreadsheet/>{importBusy?'Mengimpor...':`Import ${validCount} User`}</button></div>
       </div>}
-      {report&&<div className="stack small-gap"><div className="row wrap gap"><span className="badge success">{report.inserted} baru</span><span className="badge">{report.updated} update</span><span className="badge">{report.skipped} dilewati</span>{report.errors.length>0&&<span className="badge danger">{report.errors.length} error</span>}</div>{report.generatedPins.length>0&&<div className="notice selectable"><strong>PIN yang dibuat otomatis — simpan sebelum meninggalkan halaman:</strong>{report.generatedPins.map(x=><div key={x.nim}>{x.nim} • {x.name}: <code>{x.pin}</code></div>)}</div>}{report.errors.length>0&&<div className="error-box selectable">{report.errors.slice(0,12).map((x,i)=><div key={i}>{x}</div>)}</div>}</div>}
+      {report&&<div className="stack small-gap"><div className="row wrap gap"><span className="badge success">{report.inserted} baru</span><span className="badge">{report.updated} update</span><span className="badge">{report.skipped} dilewati</span>{report.errors.length>0&&<span className="badge danger">{report.errors.length} error</span>}</div>{report.generatedPins.length>0&&<div className="notice selectable"><div className="row between wrap gap"><strong>PIN yang dibuat otomatis — simpan sebelum meninggalkan halaman:</strong><button className="button soft compact" onClick={downloadGeneratedPins}><Download/>Download PIN</button></div>{report.generatedPins.map(x=><div key={x.nim}>{x.nim} • {x.name}: <code>{x.pin}</code></div>)}</div>}{report.errors.length>0&&<div className="error-box selectable">{report.errors.slice(0,12).map((x,i)=><div key={i}>{x}</div>)}</div>}</div>}
     </GlassCard>
 
     <div className="admin-split">

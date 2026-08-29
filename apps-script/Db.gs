@@ -1,9 +1,18 @@
+var LMS_DB_CACHE_ = null;
+var LMS_DB_CACHE_ID_ = '';
+var LMS_SHEET_CACHE_ = {};
+
 function props_() { return PropertiesService.getScriptProperties(); }
 
 function db_() {
   var id = String(props_().getProperty('SPREADSHEET_ID') || '').trim();
   if (!id) throw new Error('SPREADSHEET_ID belum dikonfigurasi. Jalankan setupLms().');
-  return SpreadsheetApp.openById(id);
+  if (!LMS_DB_CACHE_ || LMS_DB_CACHE_ID_ !== id) {
+    LMS_DB_CACHE_ = SpreadsheetApp.openById(id);
+    LMS_DB_CACHE_ID_ = id;
+    LMS_SHEET_CACHE_ = {};
+  }
+  return LMS_DB_CACHE_;
 }
 function rootFolder_() {
   var id = String(props_().getProperty('ROOT_FOLDER_ID') || '').trim();
@@ -11,8 +20,10 @@ function rootFolder_() {
   return DriveApp.getFolderById(id);
 }
 function sheet_(name) {
+  if (LMS_SHEET_CACHE_[name]) return LMS_SHEET_CACHE_[name];
   var sh = db_().getSheetByName(name);
   if (!sh) throw new Error('Sheet tidak ditemukan: ' + name);
+  LMS_SHEET_CACHE_[name] = sh;
   return sh;
 }
 function headers_(name) {
@@ -122,4 +133,16 @@ function bulkUpsert_(name,idField,objects) {
   });
   if(values.length)sh.getRange(2,1,values.length,headers.length).setValues(values);
   return {inserted:inserted,updated:updated};
+}
+
+/** Menulis ulang seluruh baris data sebuah sheet dalam satu operasi batch. Header tidak diubah. */
+function rewriteRows_(name,objects) {
+  objects=objects||[];
+  var sh=sheet_(name),headers=sheetHeaders_(name),last=sh.getLastRow();
+  if(last>1)sh.getRange(2,1,last-1,Math.max(headers.length,1)).clearContent();
+  if(objects.length){
+    var values=objects.map(function(obj){return headers.map(function(h){return obj[h]===undefined?'':obj[h];});});
+    sh.getRange(2,1,values.length,headers.length).setValues(values);
+  }
+  return objects.length;
 }

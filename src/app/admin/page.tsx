@@ -10,7 +10,7 @@ const cards=[
   ['/admin/projects','Kelola Proyek','Review perencanaan dan feedback dosen.',FolderKanban],
   ['/admin/announcements','Pengumuman','Informasi kelas yang tampil di dashboard.',Megaphone],
   ['/admin/users','Pengguna','Mahasiswa, dosen, PIN, kelas, dan Import Excel.',Users],
-  ['/admin/groups','Kelompok','Kelompok proyek dan anggota.',UsersRound],
+  ['/admin/groups','Kelompok','Kelompok 5 proyek, ketua, Import/Export Excel.',UsersRound],
   ['/admin/gradebook','Gradebook','Nilai tugas, diskusi, kuis, dan feedback.',Award],
   ['/admin/data','Import / Export','Excel data dinamis: users, post, submission, nilai, kelompok, proyek, dan log.',Database]
 ] as const;

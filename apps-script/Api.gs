@@ -26,6 +26,8 @@ function api(request) {
       case 'getStaticActivityProgress': return ok_(getStaticActivityProgressService_(request));
       case 'getProjectPlan': return ok_(getProjectPlanService_(request,payload));
       case 'saveProjectPlan': return ok_(saveProjectPlanService_(request,payload));
+      case 'getProjectFinalReport': return ok_(getProjectFinalReportService_(request,payload));
+      case 'saveProjectFinalReport': return ok_(saveProjectFinalReportService_(request,payload));
       case 'uploadAsset': return ok_(uploadAssetService_(request,payload));
 
       case 'adminListMaterials': return ok_(adminListMaterials_(request));
@@ -47,6 +49,7 @@ function api(request) {
       case 'adminSaveAnnouncement': return ok_(adminSaveAnnouncement_(request,payload));
       case 'adminListGroups': return ok_(adminListGroups_(request));
       case 'adminSaveGroup': return ok_(adminSaveGroup_(request,payload));
+      case 'adminImportGroups': return ok_(adminImportGroups_(request,payload));
       case 'adminListProjectPlans': return ok_(adminListProjectPlans_(request));
       case 'adminReviewProjectPlan': return ok_(adminReviewProjectPlan_(request,payload));
       case 'adminGradebookActivities': return ok_(adminGradebookActivities_(request));

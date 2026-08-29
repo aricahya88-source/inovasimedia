@@ -1,4 +1,4 @@
-const CACHE='lms-inovasi-shell-v1.5';
+const CACHE='lms-inovasi-shell-v1.6';
 const SHELL=['/','/login','/manifest.webmanifest','/icon-192.png','/icon-512.png'];
 
 self.addEventListener('install',event=>{

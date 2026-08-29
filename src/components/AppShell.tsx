@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   House, CalendarDays, MessagesSquare, ClipboardCheck, Star, Settings2,
-  Users, BookOpenCheck, FolderKanban, LogOut, Menu, X, LibraryBig, ScrollText
+  Users, BookOpenCheck, FolderKanban, LogOut, Menu, X, LibraryBig, ScrollText, UserRound
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -36,6 +36,7 @@ export default function AppShell({children,title='LMS Inovasi Media'}:{children:
   const {user,logout}=useAuth();
   const path=usePathname();
   const [open,setOpen]=useState(false);
+  const [accountOpen,setAccountOpen]=useState(false);
   const isAdmin=!!user && ['admin','dosen'].includes(user.role);
   const mobileNav=isAdmin
     ? [['/dashboard','Home',House],['/weeks','Pertemuan',CalendarDays],['/admin','Kelola',Settings2],['/grades','Nilai',Star],['/admin/users','Pengguna',Users]] as const
@@ -48,6 +49,7 @@ export default function AppShell({children,title='LMS Inovasi Media'}:{children:
   ] as const : [])];
 
   const drawerNav=[['/rencana-pembelajaran','Rencana Pembelajaran',ScrollText] as const,...desktopExtra,...(isAdmin?[['/admin','Kelola',Settings2],['/admin/users','Pengguna',Users]] as const:[])];
+  const doLogout=()=>{if(window.confirm('Keluar dari LMS?')){setAccountOpen(false);setOpen(false);logout();}};
 
   return <div className="app-bg">
     <div className="liquid-orb orb-a"/><div className="liquid-orb orb-b"/><div className="liquid-orb orb-c"/>
@@ -76,12 +78,17 @@ export default function AppShell({children,title='LMS Inovasi Media'}:{children:
         </div>
         <div className="topbar-actions">
           <span className="user-chip"><span className="dot"/>{user?.name}</span>
-          <button className="icon-button mobile-only" onClick={()=>setOpen(v=>!v)}>{open?<X/>:<Menu/>}</button>
+          <div className="mobile-account-wrap mobile-only">
+            <button className="mobile-account-button" aria-label="Menu akun" onClick={()=>{setAccountOpen(v=>!v);setOpen(false)}}><span>{(user?.name||'U').slice(0,1).toUpperCase()}</span></button>
+            {accountOpen&&<div className="account-popover glass-panel"><div className="account-summary"><div className="avatar">{(user?.name||'U').slice(0,1).toUpperCase()}</div><div><strong>{user?.name}</strong><small>{user?.nim||user?.role}</small></div></div><div className="account-divider"/><div className="account-role"><UserRound/> <span>{user?.role}</span></div><button className="account-logout" onClick={doLogout}><LogOut/>Keluar dari LMS</button></div>}
+          </div>
+          <button className="icon-button mobile-only" onClick={()=>{setOpen(v=>!v);setAccountOpen(false)}}>{open?<X/>:<Menu/>}</button>
         </div>
       </header>
       {open && <div className="mobile-drawer glass-panel mobile-only">
         {drawerNav.map(([href,label,Icon])=>
           <Link key={href} href={href} onClick={()=>setOpen(false)} className="drawer-link"><Icon size={18}/>{label}</Link>)}
+        <div className="drawer-divider"/><button className="drawer-link drawer-logout" onClick={doLogout}><LogOut size={18}/>Keluar</button>
       </div>}
       <main className="page-content">{children}</main>
     </div>

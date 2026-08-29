@@ -6,7 +6,7 @@ const f = (key:string,label:string,hint=''):ProjectField => ({key,label,hint});
 
 export const PROJECTS: ProjectDefinition[] = [
   {
-    code:'WEBSITE', name:'Website', group:false, themes:[
+    code:'WEBSITE', name:'Website', group:true, themes:[
       {code:'GAME',name:'Game-Based & Gamification',description:'Belajar melalui misi, tantangan, skor, level, dan pencapaian.',fields:[f('mission','Konsep misi/permainan'),f('levels','Level/tahap yang direncanakan'),f('progress','Mekanisme skor/progres'),f('challenge','Jenis tantangan'),f('feedback','Mekanisme feedback')]},
       {code:'AI',name:'AI-Based Learning',description:'AI sebagai tutor, mitra percakapan, generator latihan, atau feedback.',fields:[f('aiFunction','Fungsi AI utama'),f('prompt','Contoh prompt/konteks AI'),f('validation','Cara validasi output'),f('limits','Batasan, privasi, dan etika')]},
       {code:'MULTIMEDIA',name:'Interactive Multimedia Learning',description:'Menggabungkan teks, visual, audio/video, dan interaksi.',fields:[f('mediaMix','Kombinasi media'),f('interaction1','Aktivitas interaktif 1'),f('interaction2','Aktivitas interaktif 2'),f('navigation','Navigasi & feedback')]},
@@ -15,7 +15,7 @@ export const PROJECTS: ProjectDefinition[] = [
     ]
   },
   {
-    code:'PWA', name:'PWA', group:false, themes:[
+    code:'PWA', name:'PWA', group:true, themes:[
       {code:'OFFLINE',name:'Offline Microlearning PWA',description:'Unit belajar singkat yang tetap berguna saat koneksi lemah.',fields:[f('offline','Konten/fungsi offline'),f('cache','Strategi caching'),f('micro','Struktur microlearning')]},
       {code:'QUIZ',name:'Mobile Practice & Quiz PWA',description:'Latihan singkat dan kuis berulang yang mobile-first.',fields:[f('practice','Jenis latihan'),f('feedback','Feedback'),f('progress','Progres lokal')]},
       {code:'SPEAKING',name:'Audio & Speaking Mobile PWA',description:'Audio, shadowing, atau latihan berbicara di perangkat mobile.',fields:[f('audio','Skenario audio'),f('recording','Rencana recording'),f('privacy','Izin/perlindungan data suara')]},
@@ -24,7 +24,7 @@ export const PROJECTS: ProjectDefinition[] = [
     ]
   },
   {
-    code:'AUDIO', name:'Media Audio', group:false, themes:[
+    code:'AUDIO', name:'Media Audio', group:true, themes:[
       {code:'DIALOG',name:'Dialog Situasional & Muhadatsah',description:'Dialog kontekstual untuk istimāʿ/kalām.',fields:[f('speakers','Tokoh/pembicara'),f('situation','Situasi komunikasi'),f('duration','Durasi target')]},
       {code:'LISTEN',name:'Listening Comprehension Challenge',description:'Audio dengan tugas pemahaman bertahap.',fields:[f('input','Jenis input audio'),f('questions','Bentuk pertanyaan'),f('scaffold','Replay/transkrip/scaffolding')]},
       {code:'SHADOW',name:'Pronunciation & Shadowing Audio',description:'Model pelafalan, makhārij, ritme, dan shadowing.',fields:[f('targetSound','Target bunyi/pola'),f('model','Model audio'),f('practice','Tahapan shadowing')]},
@@ -33,7 +33,7 @@ export const PROJECTS: ProjectDefinition[] = [
     ]
   },
   {
-    code:'VISUAL', name:'Media Visual', group:false, themes:[
+    code:'VISUAL', name:'Media Visual', group:true, themes:[
       {code:'INFOGRAPHIC',name:'Infografik Konsep / Qawaid',description:'Visualisasi konsep, pola, atau relasi.',fields:[f('concept','Konsep utama'),f('hierarchy','Hierarki informasi'),f('format','Ukuran/orientasi')]},
       {code:'FLASHCARD',name:'Flashcard Mufradat & Retrieval',description:'Kartu visual untuk retrieval practice.',fields:[f('cards','Jumlah/kelompok kartu'),f('frontback','Isi sisi depan-belakang'),f('visualRule','Aturan visual')]},
       {code:'POSTER',name:'Poster Komunikatif / Situasional',description:'Pesan bahasa dalam konteks situasional.',fields:[f('message','Pesan utama'),f('context','Situasi'),f('cta','Aktivitas/CTA')]},
