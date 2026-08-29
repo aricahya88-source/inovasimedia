@@ -7,7 +7,7 @@ import RichHtml from '@/components/RichHtml';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatDate } from '@/lib/utils';
-import { BookOpenText, CalendarDays, MessagesSquare, FolderKanban, Award, ArrowRight, Megaphone } from 'lucide-react';
+import { BookOpenText, CalendarDays, MessagesSquare, FolderKanban, Award, ArrowRight, Megaphone, ScrollText } from 'lucide-react';
 import Link from 'next/link';
 
 type Dash = {
@@ -37,9 +37,8 @@ export default function DashboardPage(){
         <GlassCard className="stat-card"><div className="icon-bubble teal"><Award/></div><div><strong>{d.stats.graded}</strong><span>Dinilai</span></div></GlassCard>
       </div>
 
-      {d.currentWeek&&<GlassCard className="feature-card">
-        <div className="icon-bubble teal"><CalendarDays/></div><div className="grow"><span className="eyebrow">PERTEMUAN BERJALAN</span><h3>{d.currentWeek.title}</h3><p className="muted">Dua materi per pertemuan; kuis dan forum muncul hanya pada checkpoint tertentu.</p></div>
-        <Link className="circle-link" href={`/weeks/${d.currentWeek.week_no}`}><ArrowRight/></Link>
+      {d.currentWeek&&<GlassCard className="feature-card dashboard-current-week">
+        <div className="icon-bubble teal"><CalendarDays/></div><div className="grow"><span className="eyebrow">PERTEMUAN BERJALAN</span><h3>{d.currentWeek.title}</h3><p className="muted">Dua materi per pertemuan; kuis dan forum muncul hanya pada checkpoint tertentu.</p><div className="row wrap gap dashboard-plan-actions"><Link className="button soft compact" href="/rencana-pembelajaran"><ScrollText/>Lihat Rencana</Link><Link className="button primary compact" href={`/weeks/${d.currentWeek.week_no}`}>Mulai Belajar <ArrowRight/></Link></div></div>
       </GlassCard>}
 
       <div className="two-column">

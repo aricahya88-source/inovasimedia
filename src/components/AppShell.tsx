@@ -4,13 +4,22 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   House, CalendarDays, MessagesSquare, ClipboardCheck, Star, Settings2,
-  Users, BookOpenCheck, FolderKanban, LogOut, Menu, X, LibraryBig
+  Users, BookOpenCheck, FolderKanban, LogOut, Menu, X, LibraryBig, ScrollText
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
-const student = [
+const studentDesktop = [
+  ['/dashboard','Home',House],
+  ['/rencana-pembelajaran','Rencana Pembelajaran',ScrollText],
+  ['/weeks','Pertemuan',CalendarDays],
+  ['/discussions','Diskusi',MessagesSquare],
+  ['/tasks','Tugas',ClipboardCheck],
+  ['/grades','Nilai',Star]
+] as const;
+
+const studentMobile = [
   ['/dashboard','Home',House],
   ['/weeks','Pertemuan',CalendarDays],
   ['/discussions','Diskusi',MessagesSquare],
@@ -30,13 +39,15 @@ export default function AppShell({children,title='LMS Inovasi Media'}:{children:
   const isAdmin=!!user && ['admin','dosen'].includes(user.role);
   const mobileNav=isAdmin
     ? [['/dashboard','Home',House],['/weeks','Pertemuan',CalendarDays],['/admin','Kelola',Settings2],['/grades','Nilai',Star],['/admin/users','Pengguna',Users]] as const
-    : student;
+    : studentMobile;
 
-  const nav=[...student,...desktopExtra,...(isAdmin ? [
+  const nav=[...studentDesktop,...desktopExtra,...(isAdmin ? [
     ['/admin','Kelola',Settings2],
     ['/admin/users','Pengguna',Users],
     ['/admin/gradebook','Gradebook',BookOpenCheck]
   ] as const : [])];
+
+  const drawerNav=[['/rencana-pembelajaran','Rencana Pembelajaran',ScrollText] as const,...desktopExtra,...(isAdmin?[['/admin','Kelola',Settings2],['/admin/users','Pengguna',Users]] as const:[])];
 
   return <div className="app-bg">
     <div className="liquid-orb orb-a"/><div className="liquid-orb orb-b"/><div className="liquid-orb orb-c"/>
@@ -69,7 +80,7 @@ export default function AppShell({children,title='LMS Inovasi Media'}:{children:
         </div>
       </header>
       {open && <div className="mobile-drawer glass-panel mobile-only">
-        {[...desktopExtra,...(isAdmin?[['/admin','Kelola',Settings2],['/admin/users','Pengguna',Users]] as const:[])].map(([href,label,Icon])=>
+        {drawerNav.map(([href,label,Icon])=>
           <Link key={href} href={href} onClick={()=>setOpen(false)} className="drawer-link"><Icon size={18}/>{label}</Link>)}
       </div>}
       <main className="page-content">{children}</main>
