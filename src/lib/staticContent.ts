@@ -6,7 +6,7 @@ import type { Activity, Material, WeekSummary, DiscussionSummary } from './types
  * A revision query is appended to every request so an older PWA service worker
  * cannot keep serving the previous 28-quiz / 28-discussion JSON forever.
  */
-const STATIC_CONTENT_REV = 'v1.7.0-20260829';
+const STATIC_CONTENT_REV = 'v1.7.1-20260830';
 
 export type StaticMilestone = {
   block:number;
@@ -14,6 +14,48 @@ export type StaticMilestone = {
   deadline:string;
   deadline_label:string;
   material_range:string;
+};
+
+
+export type StaticRppCheckpoint = {
+  activity_id:string;
+  type:string;
+  title:string;
+  href:string;
+};
+
+export type StaticRppMeeting = {
+  meeting_no:number;
+  week_id:string;
+  date:string;
+  date_label:string;
+  block:number;
+  block_deadline:string;
+  block_deadline_label:string;
+  title:string;
+  materials:Array<{material_no:number;title:string}>;
+  sub_cpmk:string[];
+  objectives:string[];
+  before:string[];
+  during:string[];
+  after:string[];
+  outputs:string[];
+  checkpoints:StaticRppCheckpoint[];
+  duration:string;
+  milestone:string;
+};
+
+export type StaticRpp = {
+  course:string;
+  semester_start:string;
+  semester_start_label:string;
+  meeting_day:string;
+  meeting_count:number;
+  material_count:number;
+  duration_per_meeting:string;
+  design_note:string;
+  milestones:StaticMilestone[];
+  meetings:StaticRppMeeting[];
 };
 
 export type StaticWeekData = {
@@ -123,4 +165,10 @@ export async function getStaticActivities(){
   const rows=await staticJson<Array<Activity & {quiz_id?:string;discussion_id?:string;material_no?:number;material_range?:string}>>('/content/activity-index.json');
   if(!Array.isArray(rows)) throw new Error('Format daftar aktivitas tidak valid.');
   return rows;
+}
+
+export async function getStaticRpp(){
+  const data=await staticJson<StaticRpp>('/content/rpp.json');
+  if(!data || !Array.isArray(data.meetings)) throw new Error('Format Rencana Pembelajaran tidak valid.');
+  return data;
 }
