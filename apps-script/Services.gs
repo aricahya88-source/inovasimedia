@@ -4,6 +4,26 @@ function sanitizeHtml_(value) {
   s=s.replace(/\son\w+\s*=\s*(['"]).*?\1/gi,'').replace(/javascript:/gi,'');
   return s;
 }
+
+function stripHtmlText_(value) {
+  return String(value||'').replace(/<br\s*\/?\s*>/gi,'\n').replace(/<\/p>/gi,'\n').replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/&lt;/gi,'<').replace(/&gt;/gi,'>').replace(/&quot;/gi,'"').replace(/&#39;/gi,"'").replace(/[ \t]+/g,' ').replace(/\n\s+/g,'\n').trim();
+}
+function feedbackTextToHtml_(value) {
+  var s=String(value||'').trim();
+  if(!s)return '';
+  s=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\r?\n/g,'<br>');
+  return '<p>'+s+'</p>';
+}
+function normalizedGrade100_(grade) {
+  if(!grade)return null;
+  var c=cleanObj_(grade),max=num_(c.max_score,100),score=num_(c.score,0);
+  if(max>0&&max!==100)score=Math.round((score/max*100)*100)/100;
+  c.score=Math.max(0,Math.min(100,score));c.max_score=100;
+  return c;
+}
+function normalizedActivity100_(activity) {
+  if(!activity)return activity;var c=cleanObj_(activity);c.max_score=100;return c;
+}
 function visible_(v){return v===''||v===null||v===undefined||asBool_(v);}
 function legacyStaticActivity_(a){var id=String((a&&a.activity_id)||'');return /^(QUIZ|DISC)_M\d{2}$/.test(id);}
 function enrichUser_(u){return u?safeUser_(u):null;}
@@ -45,7 +65,7 @@ function dashboardService_(request) {
   });
   var upcoming=activities.filter(function(a){return a.due_at&&new Date(a.due_at).getTime()>=Date.now();})
     .sort(function(a,b){return new Date(a.due_at)-new Date(b.due_at);}).slice(0,6)
-    .map(function(a){return cleanObj_(a);});
+    .map(function(a){return normalizedActivity100_(a);});
   var announcements=rows_(LMS.SHEETS.ANNOUNCEMENTS).filter(function(a){return visible_(a.visible);})
     .sort(function(a,b){return new Date(b.published_at||b.updated_at)-new Date(a.published_at||a.updated_at);}).slice(0,4).map(cleanObj_);
   var projectActs=activities.filter(function(a){return a.type==='project';}),projectPlans=findMany_(LMS.SHEETS.PROJECT_PLANS,'user_id',user.user_id),pmap={};
@@ -73,7 +93,7 @@ function getWeekService_(request,payload) {
   }
   if(!week)throw new Error('Minggu tidak ditemukan.');
   var materials=findMany_(LMS.SHEETS.MATERIALS,'week_id',week.week_id).filter(function(m){return visible_(m.visible);}).sort(function(a,b){return num_(a.order_no)-num_(b.order_no);}).map(cleanObj_);
-  var activities=findMany_(LMS.SHEETS.ACTIVITIES,'week_id',week.week_id).filter(function(a){return visible_(a.visible);}).sort(function(a,b){return String(a.type).localeCompare(String(b.type));}).map(cleanObj_);
+  var activities=findMany_(LMS.SHEETS.ACTIVITIES,'week_id',week.week_id).filter(function(a){return visible_(a.visible);}).sort(function(a,b){return String(a.type).localeCompare(String(b.type));}).map(normalizedActivity100_);
   return {week:cleanObj_(week),materials:materials,activities:activities};
 }
 function listDiscussionsService_(request) {
@@ -82,7 +102,7 @@ function listDiscussionsService_(request) {
   var out=[];
   acts.forEach(function(a){
     var d=discussionByActivity_(a.activity_id);if(!d)return;
-    out.push({discussion_id:d.discussion_id,activity_id:a.activity_id,week_id:a.week_id,title:a.title,prompt_html:d.prompt_html,max_score:num_(a.max_score),post_count:findMany_(LMS.SHEETS.POSTS,'discussion_id',d.discussion_id).filter(function(p){return String(p.status||'active')!=='deleted';}).length});
+    out.push({discussion_id:d.discussion_id,activity_id:a.activity_id,week_id:a.week_id,title:a.title,prompt_html:d.prompt_html,max_score:100,post_count:findMany_(LMS.SHEETS.POSTS,'discussion_id',d.discussion_id).filter(function(p){return String(p.status||'active')!=='deleted';}).length});
   });
   return out;
 }
@@ -94,7 +114,7 @@ function getDiscussionService_(request,payload) {
   var posts=findMany_(LMS.SHEETS.POSTS,'discussion_id',d.discussion_id).filter(function(p){return String(p.status||'active')!=='deleted';})
     .sort(function(a,b){return new Date(a.created_at)-new Date(b.created_at);})
     .map(function(p){var c=cleanObj_(p);c.author=umap[p.user_id]||null;return c;});
-  return {discussion:cleanObj_(d),activity:cleanObj_(activity),posts:posts};
+  return {discussion:cleanObj_(d),activity:normalizedActivity100_(activity),posts:posts};
 }
 function createPostService_(request,payload) {
   var user=requireUser_(request);
@@ -111,18 +131,18 @@ function listTasksService_(request) {
   var qcount={};attempts.forEach(function(at){var q=findOne_(LMS.SHEETS.QUIZZES,'quiz_id',at.quiz_id);if(q)qcount[q.activity_id]=(qcount[q.activity_id]||0)+1;});
   return rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return visible_(a.visible)&&!legacyStaticActivity_(a)&&['assignment','checkpoint','reflection','peer_review','test','presentation','quiz'].indexOf(String(a.type))>=0;})
     .sort(function(a,b){return String(a.week_id).localeCompare(String(b.week_id));})
-    .map(function(a){return {activity_id:a.activity_id,week_id:a.week_id,type:a.type,title:a.title,max_score:num_(a.max_score),due_at:a.due_at,project_code:a.project_code,submitted:!!smap[a.activity_id],attempts:qcount[a.activity_id]||0};});
+    .map(function(a){return {activity_id:a.activity_id,week_id:a.week_id,type:a.type,title:a.title,max_score:100,due_at:a.due_at,project_code:a.project_code,submitted:!!smap[a.activity_id],attempts:qcount[a.activity_id]||0};});
 }
 
 function taskDataService_(request,payload) {
   var user=requireUser_(request),a=activityById_(payload.activity_id);if(!a)throw new Error('Aktivitas tidak ditemukan.');
-  if(a.type==='quiz')return {activity:cleanObj_(a),latest:null,grade:null,comments:[]};
+  if(a.type==='quiz')return {activity:normalizedActivity100_(a),latest:null,grade:null,comments:[]};
   var subs=findMany_(LMS.SHEETS.SUBMISSIONS,'activity_id',a.activity_id).filter(function(s){return s.user_id===user.user_id;}).sort(function(x,y){return num_(y.version)-num_(x.version);});
   var latest=subs[0]||null;
   var grades=findMany_(LMS.SHEETS.GRADES,'activity_id',a.activity_id).filter(function(g){return g.user_id===user.user_id&&asBool_(g.published);}).sort(function(x,y){return new Date(y.graded_at)-new Date(x.graded_at);});
   var comments=latest?findMany_(LMS.SHEETS.COMMENTS,'entity_id',latest.submission_id).filter(function(c){return c.entity_type==='submission';}):[];
   var umap=userMap_();comments=comments.map(function(c){var x=cleanObj_(c);x.author=umap[c.user_id]||null;return x;});
-  return {activity:cleanObj_(a),latest:latest?cleanObj_(latest):null,grade:grades[0]?cleanObj_(grades[0]):null,comments:comments};
+  return {activity:normalizedActivity100_(a),latest:latest?cleanObj_(latest):null,grade:grades[0]?normalizedGrade100_(grades[0]):null,comments:comments};
 }
 function submitWorkService_(request,payload) {
   var user=requireUser_(request),a=activityById_(payload.activity_id);if(!a)throw new Error('Aktivitas tidak ditemukan.');
@@ -141,7 +161,7 @@ function submitWorkService_(request,payload) {
 function listGradesService_(request) {
   var user=requireUser_(request),acts={};rows_(LMS.SHEETS.ACTIVITIES).forEach(function(a){acts[a.activity_id]=a;});
   return findMany_(LMS.SHEETS.GRADES,'user_id',user.user_id).filter(function(g){return asBool_(g.published);})
-    .sort(function(a,b){return new Date(b.graded_at)-new Date(a.graded_at);}).map(function(g){var c=cleanObj_(g);c.activity_title=acts[g.activity_id]?acts[g.activity_id].title:g.activity_id;return c;});
+    .sort(function(a,b){return new Date(b.graded_at)-new Date(a.graded_at);}).map(function(g){var c=normalizedGrade100_(g);c.activity_title=acts[g.activity_id]?acts[g.activity_id].title:g.activity_id;return c;});
 }
 
 function getQuizService_(request,payload) {
@@ -154,7 +174,7 @@ function getQuizService_(request,payload) {
   ],points:num_(x.points,1)};});
   var attempts=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'quiz_id',q.quiz_id).filter(function(x){return x.user_id===user.user_id;});
   var best=null;attempts.forEach(function(x){if(!best||num_(x.percentage)>num_(best.percentage))best=x;});
-  return {activity:cleanObj_(a),quiz:cleanObj_(q),questions:publicQ,attempts:attempts.length,best:best?{score:num_(best.score),max_score:num_(best.max_score),percentage:num_(best.percentage)}:null};
+  return {activity:normalizedActivity100_(a),quiz:cleanObj_(q),questions:publicQ,attempts:attempts.length,best:best?{score:Math.round(num_(best.percentage)*100)/100,max_score:100,percentage:num_(best.percentage)}:null};
 }
 function submitQuizService_(request,payload) {
   var user=requireUser_(request),a=activityById_(payload.activity_id);if(!a||a.type!=='quiz')throw new Error('Kuis tidak ditemukan.');
@@ -162,20 +182,16 @@ function submitQuizService_(request,payload) {
   var prior=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'quiz_id',q.quiz_id).filter(function(x){return x.user_id===user.user_id;});
   if(prior.length>=num_(q.attempt_limit,1))throw new Error('Kesempatan kuis sudah habis.');
   var answers=payload.answers||{},questions=findMany_(LMS.SHEETS.QUIZ_QUESTIONS,'quiz_id',q.quiz_id);
-  var score=0,max=0,feedback=[];
-  questions.forEach(function(x){
-    var pts=num_(x.points,1),correct=String(answers[x.question_id]||'').toUpperCase()===String(x.correct_option||'').toUpperCase();
-    max+=pts;if(correct)score+=pts;
-    feedback.push({question_id:x.question_id,correct:correct,correct_option:asBool_(q.show_feedback)?x.correct_option:'',explanation_html:asBool_(q.show_feedback)?x.explanation_html:''});
-  });
-  var pct=max?score/max*100:0,attemptNo=prior.length+1;
-  appendObj_(LMS.SHEETS.QUIZ_ATTEMPTS,{attempt_id:makeId_('ATT'),quiz_id:q.quiz_id,user_id:user.user_id,attempt_no:attemptNo,answers_json:JSON.stringify(answers),score:score,max_score:max,percentage:pct,submitted_at:nowIso_()});
-  var bestScore=score;prior.forEach(function(x){bestScore=Math.max(bestScore,num_(x.score));});
+  var raw=0,rawMax=0,feedback=[];
+  questions.forEach(function(x){var pts=num_(x.points,1),correct=String(answers[x.question_id]||'').toUpperCase()===String(x.correct_option||'').toUpperCase();rawMax+=pts;if(correct)raw+=pts;feedback.push({question_id:x.question_id,correct:correct,correct_option:asBool_(q.show_feedback)?x.correct_option:'',explanation_html:asBool_(q.show_feedback)?x.explanation_html:''});});
+  var pct=rawMax?raw/rawMax*100:0,score100=Math.round(pct*100)/100,attemptNo=prior.length+1,now=nowIso_();
+  appendObj_(LMS.SHEETS.QUIZ_ATTEMPTS,{attempt_id:makeId_('ATT'),quiz_id:q.quiz_id,user_id:user.user_id,attempt_no:attemptNo,answers_json:JSON.stringify(answers),score:score100,max_score:100,percentage:pct,submitted_at:now});
+  var bestScore=score100;prior.forEach(function(x){bestScore=Math.max(bestScore,num_(x.percentage,(num_(x.max_score)>0?num_(x.score)/num_(x.max_score)*100:0)));});
   var existing=findMany_(LMS.SHEETS.GRADES,'activity_id',a.activity_id).filter(function(g){return g.user_id===user.user_id;})[0];
-  var grade={grade_id:existing?existing.grade_id:makeId_('GRD'),activity_id:a.activity_id,user_id:user.user_id,submission_id:'',score:bestScore,max_score:max,feedback_html:'<p>Nilai terbaik kuis formatif.</p>',published:true,graded_by:'AUTO',graded_at:nowIso_(),updated_at:nowIso_()};
+  var grade={grade_id:existing?existing.grade_id:makeId_('GRD'),activity_id:a.activity_id,user_id:user.user_id,submission_id:'',score:bestScore,max_score:100,feedback_html:'<p>Nilai terbaik kuis formatif pada skala 0–100.</p>',published:true,graded_by:'AUTO',graded_at:now,updated_at:now};
   upsertObj_(LMS.SHEETS.GRADES,'grade_id',grade);
-  log_(user.user_id,'SUBMIT_QUIZ','quiz',q.quiz_id,{score:score,max:max,attempt:attemptNo});
-  return {score:score,max_score:max,percentage:pct,attempt_no:attemptNo,feedback:asBool_(q.show_feedback)?feedback:[]};
+  log_(user.user_id,'SUBMIT_QUIZ','quiz',q.quiz_id,{score:score100,max:100,attempt:attemptNo});
+  return {score:score100,max_score:100,percentage:pct,attempt_no:attemptNo,feedback:asBool_(q.show_feedback)?feedback:[]};
 }
 function projectActivityByCode_(projectCode){
   var code=String(projectCode||'').toUpperCase();
@@ -239,7 +255,7 @@ function getProjectFinalReportService_(request,payload){
   var latest=subs[0]||null,comments=latest?findMany_(LMS.SHEETS.COMMENTS,'entity_id',latest.submission_id).filter(function(c){return c.entity_type==='submission';}):[],umap=userMap_();
   comments=comments.map(function(c){var x=cleanObj_(c);x.author=umap[c.user_id]||null;return x;});
   var grades=findMany_(LMS.SHEETS.GRADES,'activity_id',a.activity_id).filter(function(g){return g.user_id===user.user_id&&asBool_(g.published);}).sort(function(x,y){return new Date(y.graded_at)-new Date(x.graded_at);});
-  return {activity:cleanObj_(a),report:latest?cleanObj_(latest):null,comments:comments,grade:grades[0]?cleanObj_(grades[0]):null,group:owner.group?cleanObj_(owner.group):null,group_members:projectGroupMembersPublic_(owner.group_ctx),can_edit:owner.can_edit,is_group:owner.is_group,membership_role:owner.group_ctx?String(owner.group_ctx.membership.role||'member').toLowerCase():'individual'};
+  return {activity:normalizedActivity100_(a),report:latest?cleanObj_(latest):null,comments:comments,grade:grades[0]?normalizedGrade100_(grades[0]):null,group:owner.group?cleanObj_(owner.group):null,group_members:projectGroupMembersPublic_(owner.group_ctx),can_edit:owner.can_edit,is_group:owner.is_group,membership_role:owner.group_ctx?String(owner.group_ctx.membership.role||'member').toLowerCase():'individual'};
 }
 function saveProjectFinalReportService_(request,payload){
   var user=requireUser_(request),code=String(payload.project_code||'').toUpperCase(),owner=projectOwnerContext_(user,code),a=owner.activity;
@@ -263,27 +279,25 @@ function adminSaveMaterial_(request,payload){
   var admin=requireAdmin_(request),m=payload.material||{};if(!m.material_id)throw new Error('material_id wajib.');
   m.content_html=sanitizeHtml_(m.content_html);m.updated_at=nowIso_();var r=upsertObj_(LMS.SHEETS.MATERIALS,'material_id',m);log_(admin.user_id,'SAVE_MATERIAL','material',m.material_id,{});return {material:cleanObj_(r)};
 }
-function adminListActivities_(request){
-  requireAdmin_(request);return rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return ['discussion','quiz','project'].indexOf(String(a.type))<0;}).sort(function(a,b){return String(a.week_id).localeCompare(String(b.week_id));}).map(cleanObj_);
-}
+function adminListActivities_(request){requireAdmin_(request);return rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return ['discussion','quiz','project'].indexOf(String(a.type))<0;}).sort(function(a,b){return String(a.week_id).localeCompare(String(b.week_id));}).map(function(a){return normalizedActivity100_(a);});}
 function adminSaveActivity_(request,payload){
   var admin=requireAdmin_(request),a=payload.activity||{},id=String(a.activity_id||makeId_('ACT'));
-  var now=nowIso_(),row={activity_id:id,week_id:String(a.week_id||'W01'),type:String(a.type||'assignment'),title:String(a.title||''),description_html:sanitizeHtml_(a.description_html),mode:String(a.mode||'individual'),max_score:num_(a.max_score,100),due_at:String(a.due_at||''),visible:a.visible!==false,allow_comments:a.allow_comments!==false,project_code:String(a.project_code||''),created_at:a.created_at||now,updated_at:now};
+  var now=nowIso_(),row={activity_id:id,week_id:String(a.week_id||'W01'),type:String(a.type||'assignment'),title:String(a.title||''),description_html:sanitizeHtml_(a.description_html),mode:String(a.mode||'individual'),max_score:100,due_at:String(a.due_at||''),visible:a.visible!==false,allow_comments:a.allow_comments!==false,project_code:String(a.project_code||''),created_at:a.created_at||now,updated_at:now};
   upsertObj_(LMS.SHEETS.ACTIVITIES,'activity_id',row);log_(admin.user_id,'SAVE_ACTIVITY','activity',id,{});return {activity:cleanObj_(row)};
 }
 function adminListDiscussions_(request){
   requireAdmin_(request);var acts={};rows_(LMS.SHEETS.ACTIVITIES).forEach(function(a){acts[a.activity_id]=a;});
-  return rows_(LMS.SHEETS.DISCUSSIONS).filter(function(d){var a=acts[d.activity_id];return !!a&&!legacyStaticActivity_(a);}).map(function(d){var a=acts[d.activity_id]||{};return {discussion_id:d.discussion_id,activity_id:d.activity_id,week_id:a.week_id||'',title:a.title||'',prompt_html:d.prompt_html,max_score:num_(a.max_score,10),min_posts:num_(d.min_posts,1),due_at:a.due_at||'',visible:visible_(a.visible)};}).sort(function(a,b){return String(a.week_id).localeCompare(String(b.week_id));});
+  return rows_(LMS.SHEETS.DISCUSSIONS).filter(function(d){var a=acts[d.activity_id];return !!a&&!legacyStaticActivity_(a);}).map(function(d){var a=acts[d.activity_id]||{};return {discussion_id:d.discussion_id,activity_id:d.activity_id,week_id:a.week_id||'',title:a.title||'',prompt_html:d.prompt_html,max_score:100,min_posts:num_(d.min_posts,1),due_at:a.due_at||'',visible:visible_(a.visible)};}).sort(function(a,b){return String(a.week_id).localeCompare(String(b.week_id));});
 }
 function adminSaveDiscussion_(request,payload){
   var admin=requireAdmin_(request),d=payload.discussion||{},aid=String(d.activity_id||makeId_('DISC_ACT')),did=String(d.discussion_id||makeId_('DISC')),now=nowIso_();
-  upsertObj_(LMS.SHEETS.ACTIVITIES,'activity_id',{activity_id:aid,week_id:String(d.week_id||'W01'),type:'discussion',title:String(d.title||'Diskusi'),description_html:'',mode:'individual',max_score:num_(d.max_score,10),due_at:String(d.due_at||''),visible:d.visible!==false,allow_comments:true,project_code:'',created_at:now,updated_at:now});
+  upsertObj_(LMS.SHEETS.ACTIVITIES,'activity_id',{activity_id:aid,week_id:String(d.week_id||'W01'),type:'discussion',title:String(d.title||'Diskusi'),description_html:'',mode:'individual',max_score:100,due_at:String(d.due_at||''),visible:d.visible!==false,allow_comments:true,project_code:'',created_at:now,updated_at:now});
   upsertObj_(LMS.SHEETS.DISCUSSIONS,'discussion_id',{discussion_id:did,activity_id:aid,prompt_html:sanitizeHtml_(d.prompt_html),min_posts:num_(d.min_posts,1),grading_mode:'manual',updated_at:now});
-  log_(admin.user_id,'SAVE_DISCUSSION','discussion',did,{});return {discussion:{discussion_id:did,activity_id:aid,week_id:d.week_id,title:d.title,prompt_html:d.prompt_html,max_score:num_(d.max_score,10),min_posts:num_(d.min_posts,1),due_at:d.due_at||'',visible:d.visible!==false}};
+  log_(admin.user_id,'SAVE_DISCUSSION','discussion',did,{});return {discussion:{discussion_id:did,activity_id:aid,week_id:d.week_id,title:d.title,prompt_html:d.prompt_html,max_score:100,min_posts:num_(d.min_posts,1),due_at:d.due_at||'',visible:d.visible!==false}};
 }
 function adminListQuizzes_(request){
   requireAdmin_(request);var acts={};rows_(LMS.SHEETS.ACTIVITIES).forEach(function(a){acts[a.activity_id]=a;});
-  return rows_(LMS.SHEETS.QUIZZES).filter(function(q){var a=acts[q.activity_id];return !!a&&!legacyStaticActivity_(a);}).map(function(q){var a=acts[q.activity_id]||{};var qs=findMany_(LMS.SHEETS.QUIZ_QUESTIONS,'quiz_id',q.quiz_id);return {quiz_id:q.quiz_id,activity_id:q.activity_id,week_id:a.week_id||'',title:a.title||'',attempt_limit:num_(q.attempt_limit,1),max_score:qs.reduce(function(s,x){return s+num_(x.points,1);},0)};}).sort(function(a,b){return String(a.week_id).localeCompare(String(b.week_id));});
+  return rows_(LMS.SHEETS.QUIZZES).filter(function(q){var a=acts[q.activity_id];return !!a&&!legacyStaticActivity_(a);}).map(function(q){var a=acts[q.activity_id]||{};return {quiz_id:q.quiz_id,activity_id:q.activity_id,week_id:a.week_id||'',title:a.title||'',attempt_limit:num_(q.attempt_limit,1),max_score:100};}).sort(function(a,b){return String(a.week_id).localeCompare(String(b.week_id));});
 }
 function adminGetQuiz_(request,payload){
   requireAdmin_(request);var a=activityById_(payload.activity_id);if(!a)throw new Error('Kuis tidak ditemukan.');var q=quizByActivity_(a.activity_id);if(!q)throw new Error('Quiz row tidak ditemukan.');
@@ -291,7 +305,7 @@ function adminGetQuiz_(request,payload){
 }
 function adminSaveQuiz_(request,payload){
   var admin=requireAdmin_(request),q=payload.quiz||{},aid=String(q.activity_id||makeId_('QUIZ_ACT')),qid=String(q.quiz_id||makeId_('QUIZ')),now=nowIso_();
-  upsertObj_(LMS.SHEETS.ACTIVITIES,'activity_id',{activity_id:aid,week_id:String(q.week_id||'W01'),type:'quiz',title:String(q.title||'Kuis'),description_html:'',mode:'individual',max_score:0,due_at:String(q.due_at||''),visible:q.visible!==false,allow_comments:false,project_code:'',created_at:now,updated_at:now});
+  upsertObj_(LMS.SHEETS.ACTIVITIES,'activity_id',{activity_id:aid,week_id:String(q.week_id||'W01'),type:'quiz',title:String(q.title||'Kuis'),description_html:'',mode:'individual',max_score:100,due_at:String(q.due_at||''),visible:q.visible!==false,allow_comments:false,project_code:'',created_at:now,updated_at:now});
   upsertObj_(LMS.SHEETS.QUIZZES,'quiz_id',{quiz_id:qid,activity_id:aid,instructions_html:sanitizeHtml_(q.instructions_html),attempt_limit:num_(q.attempt_limit,3),show_feedback:q.show_feedback!==false,shuffle_questions:asBool_(q.shuffle_questions),updated_at:now});
   log_(admin.user_id,'SAVE_QUIZ','quiz',qid,{});return adminGetQuiz_(request,{activity_id:aid});
 }
@@ -301,7 +315,7 @@ function adminSaveQuizQuestion_(request,payload){
   upsertObj_(LMS.SHEETS.QUIZ_QUESTIONS,'question_id',row);recalcQuizMax_(a.activity_id,q.quiz_id);log_(admin.user_id,'SAVE_QUIZ_QUESTION','quiz_question',id,{});return cleanObj_(row);
 }
 function adminDeleteQuizQuestion_(request,payload){var admin=requireAdmin_(request),x=findOne_(LMS.SHEETS.QUIZ_QUESTIONS,'question_id',payload.question_id);if(!x)return true;deleteById_(LMS.SHEETS.QUIZ_QUESTIONS,'question_id',payload.question_id);var q=findOne_(LMS.SHEETS.QUIZZES,'quiz_id',x.quiz_id);if(q)recalcQuizMax_(q.activity_id,q.quiz_id);log_(admin.user_id,'DELETE_QUIZ_QUESTION','quiz_question',payload.question_id,{});return true;}
-function recalcQuizMax_(activityId,quizId){var max=findMany_(LMS.SHEETS.QUIZ_QUESTIONS,'quiz_id',quizId).reduce(function(s,x){return s+num_(x.points,1);},0);var a=activityById_(activityId);if(a)updateRowObj_(LMS.SHEETS.ACTIVITIES,a.__row,{max_score:max,updated_at:nowIso_()});}
+function recalcQuizMax_(activityId,quizId){var a=activityById_(activityId);if(a)updateRowObj_(LMS.SHEETS.ACTIVITIES,a.__row,{max_score:100,updated_at:nowIso_()});}
 
 function adminListUsers_(request){requireAdmin_(request);return rows_(LMS.SHEETS.USERS).map(function(u){var s=safeUser_(u);s.active=asBool_(u.active);return s;}).sort(function(a,b){return String(a.name).localeCompare(String(b.name));});}
 function adminSaveUser_(request,payload){
@@ -439,21 +453,19 @@ function adminReviewProjectPlan_(request,payload){
   updateRowObj_(LMS.SHEETS.PROJECT_PLANS,p.__row,update);log_(admin.user_id,'REVIEW_PROJECT_PLAN','project_plan',p.plan_id,{status:status});return true;
 }
 function adminGradebookActivities_(request){
-  requireAdmin_(request);return rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return visible_(a.visible)&&!legacyStaticActivity_(a);}).sort(function(a,b){return String(a.week_id).localeCompare(String(b.week_id));}).map(function(a){return {activity_id:a.activity_id,title:a.title,type:a.type,max_score:num_(a.max_score),week_id:a.week_id};});
+  requireAdmin_(request);return rows_(LMS.SHEETS.ACTIVITIES).filter(function(a){return visible_(a.visible)&&!legacyStaticActivity_(a);}).sort(function(a,b){return String(a.week_id).localeCompare(String(b.week_id));}).map(function(a){return {activity_id:a.activity_id,title:a.title,type:a.type,max_score:100,week_id:a.week_id};});
 }
 function adminActivityRoster_(request,payload){
   requireAdmin_(request);var a=activityById_(payload.activity_id);if(!a)throw new Error('Aktivitas tidak ditemukan.');
-  var users=rows_(LMS.SHEETS.USERS).filter(function(u){return String(u.role)==='mahasiswa'&&asBool_(u.active);});
-  var grades=findMany_(LMS.SHEETS.GRADES,'activity_id',a.activity_id),subs=findMany_(LMS.SHEETS.SUBMISSIONS,'activity_id',a.activity_id),d=a.type==='discussion'?discussionByActivity_(a.activity_id):null,posts=d?findMany_(LMS.SHEETS.POSTS,'discussion_id',d.discussion_id):[];
-  var projectUserGroup={};
-  if(a.type==='project'){
-    var groups={};rows_(LMS.SHEETS.GROUPS).forEach(function(g){if(String(g.project_code||'').toUpperCase()===String(a.project_code||'').toUpperCase())groups[g.group_id]=true;});
-    rows_(LMS.SHEETS.GROUP_MEMBERS).forEach(function(m){if(groups[m.group_id])projectUserGroup[m.user_id]=m.group_id;});
-  }
+  var allUsers=rows_(LMS.SHEETS.USERS),users=allUsers.filter(function(u){return String(u.role)==='mahasiswa'&&asBool_(u.active);}),grades=findMany_(LMS.SHEETS.GRADES,'activity_id',a.activity_id),subs=findMany_(LMS.SHEETS.SUBMISSIONS,'activity_id',a.activity_id),d=a.type==='discussion'?discussionByActivity_(a.activity_id):null,posts=d?findMany_(LMS.SHEETS.POSTS,'discussion_id',d.discussion_id):[];
+  var projectUserGroup={},groupNames={};
+  if(a.type==='project'){var groups={};rows_(LMS.SHEETS.GROUPS).forEach(function(g){if(String(g.project_code||'').toUpperCase()===String(a.project_code||'').toUpperCase()){groups[g.group_id]=true;groupNames[g.group_id]=g.name||g.group_id;}});rows_(LMS.SHEETS.GROUP_MEMBERS).forEach(function(m){if(groups[m.group_id])projectUserGroup[m.user_id]=m.group_id;});}
+  var adminIds={};allUsers.forEach(function(u){var role=String(u.role||'').toLowerCase();if(role==='admin'||role==='dosen')adminIds[u.user_id]=true;});
+  var latestComment={};rows_(LMS.SHEETS.COMMENTS).forEach(function(c){if(String(c.entity_type)!=='submission'||!adminIds[c.user_id])return;var id=String(c.entity_id||''),old=latestComment[id];if(!old||new Date(c.created_at)>new Date(old.created_at))latestComment[id]=c;});
   return users.map(function(u){
     var gs=grades.filter(function(g){return g.user_id===u.user_id;}).sort(function(x,y){return new Date(y.graded_at)-new Date(x.graded_at);}),gid=projectUserGroup[u.user_id]||'';
-    var ss=subs.filter(function(s){return gid?String(s.group_id||'')===String(gid):s.user_id===u.user_id&&!s.group_id;}).sort(function(x,y){return num_(y.version)-num_(x.version);});
-    return {user:safeUser_(u),grade:gs[0]?cleanObj_(gs[0]):null,submission:ss[0]?cleanObj_(ss[0]):null,post_count:d?posts.filter(function(p){return p.user_id===u.user_id&&String(p.status||'active')!=='deleted';}).length:undefined,group_id:gid};
+    var ss=subs.filter(function(s){return gid?String(s.group_id||'')===String(gid):s.user_id===u.user_id&&!s.group_id;}).sort(function(x,y){return num_(y.version)-num_(x.version);}),sub=ss[0]||null,cmt=sub?latestComment[sub.submission_id]:null,userPosts=d?posts.filter(function(p){return p.user_id===u.user_id&&String(p.status||'active')!=='deleted';}):[];
+    return {user:safeUser_(u),grade:gs[0]?normalizedGrade100_(gs[0]):null,submission:sub?cleanObj_(sub):null,post_count:d?userPosts.length:undefined,discussion_excerpt:d?userPosts.map(function(p){return stripHtmlText_(p.content_html);}).join(' | ').slice(0,2500):'',group_id:gid,group_name:gid?(groupNames[gid]||gid):'',has_comment:!!cmt,latest_comment_html:cmt?String(cmt.content_html||''):''};
   });
 }
 
@@ -467,11 +479,28 @@ function adminAddSubmissionComment_(request,payload){
 }
 function adminSaveGrade_(request,payload){
   var admin=requireAdmin_(request),a=activityById_(payload.activity_id);if(!a)throw new Error('Aktivitas tidak ditemukan.');
+  var score=num_(payload.score,-1);if(score<0||score>100)throw new Error('Nilai harus berada pada rentang 0–100.');
   var now=nowIso_(),targets=[String(payload.user_id)],submission=null;
-  if(payload.submission_id){submission=findOne_(LMS.SHEETS.SUBMISSIONS,'submission_id',payload.submission_id);if(submission&&a.type==='project'&&submission.group_id){targets=findMany_(LMS.SHEETS.GROUP_MEMBERS,'group_id',submission.group_id).map(function(m){return String(m.user_id);});if(!targets.length)targets=[String(payload.user_id)];}}
-  var saved=[];targets.forEach(function(uid){var existing=findMany_(LMS.SHEETS.GRADES,'activity_id',a.activity_id).filter(function(g){return g.user_id===uid;})[0],id=existing?existing.grade_id:makeId_('GRD');var row={grade_id:id,activity_id:a.activity_id,user_id:uid,submission_id:String(payload.submission_id||''),score:num_(payload.score),max_score:num_(a.max_score,100),feedback_html:sanitizeHtml_(payload.feedback_html),published:payload.published!==false,graded_by:admin.user_id,graded_at:now,updated_at:now};upsertObj_(LMS.SHEETS.GRADES,'grade_id',row);saved.push(cleanObj_(row));});
-  if(submission&&payload.feedback_html){appendObj_(LMS.SHEETS.COMMENTS,{comment_id:makeId_('CMT'),entity_type:'submission',entity_id:submission.submission_id,user_id:admin.user_id,parent_comment_id:'',content_html:sanitizeHtml_(payload.feedback_html),created_at:now,updated_at:now});}
-  log_(admin.user_id,'SAVE_GRADE','activity',a.activity_id,{user_ids:targets,score:num_(payload.score),group_applied:targets.length>1});return saved[0];
+  if(payload.submission_id){submission=findOne_(LMS.SHEETS.SUBMISSIONS,'submission_id',payload.submission_id);if(submission&&submission.group_id){targets=findMany_(LMS.SHEETS.GROUP_MEMBERS,'group_id',submission.group_id).map(function(m){return String(m.user_id);});if(!targets.length)targets=[String(payload.user_id)];}}
+  var feedback=sanitizeHtml_(payload.feedback_html),saved=[];targets.forEach(function(uid){var existing=findMany_(LMS.SHEETS.GRADES,'activity_id',a.activity_id).filter(function(g){return g.user_id===uid;})[0],id=existing?existing.grade_id:makeId_('GRD');var row={grade_id:id,activity_id:a.activity_id,user_id:uid,submission_id:String(payload.submission_id||''),score:score,max_score:100,feedback_html:feedback,published:payload.published!==false,graded_by:admin.user_id,graded_at:now,updated_at:now};upsertObj_(LMS.SHEETS.GRADES,'grade_id',row);saved.push(cleanObj_(row));});
+  if(submission&&feedback){appendObj_(LMS.SHEETS.COMMENTS,{comment_id:makeId_('CMT'),entity_type:'submission',entity_id:submission.submission_id,user_id:admin.user_id,parent_comment_id:'',content_html:feedback,created_at:now,updated_at:now});}
+  log_(admin.user_id,'SAVE_GRADE','activity',a.activity_id,{user_ids:targets,score:score,max_score:100,group_applied:targets.length>1});return saved[0];
+}
+
+function adminImportGrades_(request,payload){
+  var admin=requireAdmin_(request),input=payload.rows||[];if(!Array.isArray(input)||!input.length)throw new Error('Tidak ada baris penilaian untuk diimport.');if(input.length>100)throw new Error('Maksimal 100 baris per batch.');
+  var activities={},users={},submissions={},groupMembers={},gradeIndex={},now=nowIso_();
+  rows_(LMS.SHEETS.ACTIVITIES).forEach(function(a){activities[a.activity_id]=a;});rows_(LMS.SHEETS.USERS).forEach(function(u){users[u.user_id]=u;});rows_(LMS.SHEETS.SUBMISSIONS).forEach(function(x){submissions[x.submission_id]=x;});rows_(LMS.SHEETS.GROUP_MEMBERS).forEach(function(m){if(!groupMembers[m.group_id])groupMembers[m.group_id]=[];groupMembers[m.group_id].push(String(m.user_id));});rows_(LMS.SHEETS.GRADES).forEach(function(g){gradeIndex[String(g.activity_id)+'|'+String(g.user_id)]=g;});
+  var gradeRows=[],commentRows=[],errors=[],processed=0,groupApplied=0;
+  input.forEach(function(r,i){
+    try{var activityId=String(r.activity_id||''),userId=String(r.user_id||''),submissionId=String(r.submission_id||''),a=activities[activityId];if(!a)throw new Error('aktivitas tidak ditemukan');if(String(a.type)==='quiz')throw new Error('kuis dinilai otomatis');if(!users[userId])throw new Error('user tidak ditemukan');var score=Number(r.score);if(isNaN(score)||score<0||score>100)throw new Error('nilai harus 0–100');var comment=String(r.comment||'').trim();if(!comment)throw new Error('komentar wajib diisi');var feedback=feedbackTextToHtml_(comment),sub=submissionId?submissions[submissionId]:null,targets=[userId];if(sub&&sub.group_id&&groupMembers[sub.group_id]&&groupMembers[sub.group_id].length){targets=groupMembers[sub.group_id];groupApplied++;}
+      targets.forEach(function(uid){var key=activityId+'|'+uid,existing=gradeIndex[key],row={grade_id:existing?existing.grade_id:makeId_('GRD'),activity_id:activityId,user_id:uid,submission_id:submissionId,score:score,max_score:100,feedback_html:feedback,published:true,graded_by:admin.user_id,graded_at:now,updated_at:now};gradeRows.push(row);gradeIndex[key]=row;});
+      if(sub){commentRows.push({comment_id:makeId_('CMT'),entity_type:'submission',entity_id:sub.submission_id,user_id:admin.user_id,parent_comment_id:'',content_html:feedback,created_at:now,updated_at:now});}
+      processed++;
+    }catch(e){errors.push('Baris '+(i+2)+': '+String(e&&e.message?e.message:e));}
+  });
+  if(gradeRows.length)bulkUpsert_(LMS.SHEETS.GRADES,'grade_id',gradeRows);if(commentRows.length)bulkUpsert_(LMS.SHEETS.COMMENTS,'comment_id',commentRows);SpreadsheetApp.flush();log_(admin.user_id,'IMPORT_GRADES','gradebook','BATCH',{rows:processed,grade_records:gradeRows.length,comments:commentRows.length,group_rows:groupApplied,errors:errors.length});
+  return {processed:processed,grade_records:gradeRows.length,comments:commentRows.length,group_rows:groupApplied,errors:errors};
 }
 
 function adminSeedBundledContent_(request,payload){
@@ -491,13 +520,13 @@ function adminSeedBundledContent_(request,payload){
       var pts=num_(x.points,1);maxScore+=pts;
       questions.push({question_id:qid,quiz_id:quizId,order_no:num_(x.n),question_html:'<p>'+String(x.question||'')+'</p>',option_a_html:'<p>'+String(opts.A||'')+'</p>',option_b_html:'<p>'+String(opts.B||'')+'</p>',option_c_html:'<p>'+String(opts.C||'')+'</p>',option_d_html:'<p>'+String(opts.D||'')+'</p>',correct_option:String(x.answer||'A'),points:pts,explanation_html:sanitizeHtml_(x.explanation_html||''),updated_at:now});
     });
-    activities.push({activity_id:aId,week_id:String(q.week_id),type:'quiz',title:String(q.title),description_html:'',mode:'individual',max_score:maxScore||num_(q.max_score),due_at:'',visible:true,allow_comments:false,project_code:'',created_at:now,updated_at:now});
+    activities.push({activity_id:aId,week_id:String(q.week_id),type:'quiz',title:String(q.title),description_html:'',mode:'individual',max_score:100,due_at:'',visible:true,allow_comments:false,project_code:'',created_at:now,updated_at:now});
     quizzes.push({quiz_id:quizId,activity_id:aId,instructions_html:sanitizeHtml_(q.instructions_html),attempt_limit:num_(q.attempt_limit,3),show_feedback:q.show_feedback!==false,shuffle_questions:false,updated_at:now});
     counts.quizzes++;
   });
 
   (payload.discussions||[]).forEach(function(d){
-    activities.push({activity_id:String(d.activity_id),week_id:String(d.week_id),type:'discussion',title:String(d.title),description_html:'',mode:'individual',max_score:num_(d.max_score,10),due_at:'',visible:true,allow_comments:true,project_code:'',created_at:now,updated_at:now});
+    activities.push({activity_id:String(d.activity_id),week_id:String(d.week_id),type:'discussion',title:String(d.title),description_html:'',mode:'individual',max_score:100,due_at:'',visible:true,allow_comments:true,project_code:'',created_at:now,updated_at:now});
     discussions.push({discussion_id:String(d.discussion_id),activity_id:String(d.activity_id),prompt_html:sanitizeHtml_(d.prompt_html),min_posts:num_(d.min_posts,1),grading_mode:'manual',updated_at:now});
     counts.discussions++;
   });
@@ -575,26 +604,21 @@ function assertStaticOpen_(meta,label){if(staticClosed_(meta))throw new Error((l
 function staticQuizByActivity_(activityId){var id=String(activityId||'');var keys=Object.keys(STATIC_QUIZ_BANK);for(var i=0;i<keys.length;i++){var q=STATIC_QUIZ_BANK[keys[i]];if(q.activity_id===id)return {quiz_id:keys[i],meta:q};}throw new Error('Kuis statis tidak ditemukan.');}
 
 function getStaticQuizStatusService_(request,payload){
-  var user=requireUser_(request),found=payload.quiz_id?{quiz_id:String(payload.quiz_id),meta:staticQuizMeta_(payload.quiz_id)}:staticQuizByActivity_(payload.activity_id),q=found.meta;
-  var attempts=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'quiz_id',found.quiz_id).filter(function(x){return x.user_id===user.user_id;});
-  var best=null;attempts.forEach(function(x){if(!best||num_(x.percentage)>num_(best.percentage))best=x;});
-  return {attempts:attempts.length,attempt_limit:num_(q.attempt_limit,3),best:best?{score:num_(best.score),max_score:num_(best.max_score),percentage:num_(best.percentage)}:null,closed:staticClosed_(q),due_at:String(q.due_at||'')};
+  var user=requireUser_(request),pair=staticQuizByActivity_(payload.activity_id),quizId=pair.quiz_id,q=pair.meta,attempts=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'quiz_id',quizId).filter(function(x){return x.user_id===user.user_id;}),best=null;
+  attempts.forEach(function(x){if(!best||num_(x.percentage)>num_(best.percentage))best=x;});
+  return {attempts:attempts.length,attempt_limit:num_(q.attempt_limit,3),best:best?{score:Math.round(num_(best.percentage)*100)/100,max_score:100,percentage:num_(best.percentage)}:null,closed:staticClosed_(q),due_at:String(q.due_at||'')};
 }
 function submitStaticQuizService_(request,payload){
-  var user=requireUser_(request),quizId=String(payload.quiz_id||''),q=staticQuizMeta_(quizId);
-  assertStaticOpen_(q,'Kuis');
-  if(payload.activity_id&&String(payload.activity_id)!==String(q.activity_id))throw new Error('Identitas kuis tidak sesuai.');
-  var prior=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'quiz_id',quizId).filter(function(x){return x.user_id===user.user_id;});
-  if(prior.length>=num_(q.attempt_limit,3))throw new Error('Kesempatan kuis sudah habis.');
-  var answers=payload.answers||{},score=0,max=0,feedback=[];
-  (q.questions||[]).forEach(function(x){var pts=num_(x.points,1),correct=String(answers[x.question_id]||'').toUpperCase()===String(x.correct_option||'').toUpperCase();max+=pts;if(correct)score+=pts;feedback.push({question_id:x.question_id,correct:correct,correct_option:q.show_feedback?x.correct_option:'',explanation_html:q.show_feedback?String(x.explanation_html||''):''});});
-  var pct=max?score/max*100:0,attemptNo=prior.length+1,now=nowIso_();
-  appendObj_(LMS.SHEETS.QUIZ_ATTEMPTS,{attempt_id:makeId_('ATT'),quiz_id:quizId,user_id:user.user_id,attempt_no:attemptNo,answers_json:JSON.stringify(answers),score:score,max_score:max,percentage:pct,submitted_at:now});
-  var bestScore=score;prior.forEach(function(x){bestScore=Math.max(bestScore,num_(x.score));});
+  var user=requireUser_(request),quizId=String(payload.quiz_id||''),q=staticQuizMeta_(quizId);if(String(payload.activity_id||q.activity_id)!==String(q.activity_id))throw new Error('Aktivitas kuis tidak sesuai.');assertStaticOpen_(q,'Kuis');
+  var prior=findMany_(LMS.SHEETS.QUIZ_ATTEMPTS,'quiz_id',quizId).filter(function(x){return x.user_id===user.user_id;});if(prior.length>=num_(q.attempt_limit,3))throw new Error('Kesempatan kuis sudah habis.');
+  var answers=payload.answers||{},raw=0,rawMax=0,feedback=[];(q.questions||[]).forEach(function(x){var pts=num_(x.points,1),correct=String(answers[x.question_id]||'').toUpperCase()===String(x.correct_option||'').toUpperCase();rawMax+=pts;if(correct)raw+=pts;feedback.push({question_id:x.question_id,correct:correct,correct_option:q.show_feedback?x.correct_option:'',explanation_html:q.show_feedback?String(x.explanation_html||''):''});});
+  var pct=rawMax?raw/rawMax*100:0,score100=Math.round(pct*100)/100,attemptNo=prior.length+1,now=nowIso_();
+  appendObj_(LMS.SHEETS.QUIZ_ATTEMPTS,{attempt_id:makeId_('ATT'),quiz_id:quizId,user_id:user.user_id,attempt_no:attemptNo,answers_json:JSON.stringify(answers),score:score100,max_score:100,percentage:pct,submitted_at:now});
+  var bestScore=score100;prior.forEach(function(x){bestScore=Math.max(bestScore,num_(x.percentage,(num_(x.max_score)>0?num_(x.score)/num_(x.max_score)*100:0)));});
   var existing=findMany_(LMS.SHEETS.GRADES,'activity_id',q.activity_id).filter(function(g){return g.user_id===user.user_id;})[0];
-  upsertObj_(LMS.SHEETS.GRADES,'grade_id',{grade_id:existing?existing.grade_id:makeId_('GRD'),activity_id:q.activity_id,user_id:user.user_id,submission_id:'',score:bestScore,max_score:max,feedback_html:'<p>Nilai terbaik kuis formatif.</p>',published:true,graded_by:'AUTO',graded_at:now,updated_at:now});
-  log_(user.user_id,'SUBMIT_STATIC_QUIZ','quiz',quizId,{score:score,max:max,attempt:attemptNo});
-  return {score:score,max_score:max,percentage:pct,attempt_no:attemptNo,feedback:q.show_feedback?feedback:[]};
+  upsertObj_(LMS.SHEETS.GRADES,'grade_id',{grade_id:existing?existing.grade_id:makeId_('GRD'),activity_id:q.activity_id,user_id:user.user_id,submission_id:'',score:bestScore,max_score:100,feedback_html:'<p>Nilai terbaik kuis formatif pada skala 0–100.</p>',published:true,graded_by:'AUTO',graded_at:now,updated_at:now});
+  log_(user.user_id,'SUBMIT_STATIC_QUIZ','quiz',quizId,{score:score100,max:100,attempt:attemptNo});
+  return {score:score100,max_score:100,percentage:pct,attempt_no:attemptNo,feedback:q.show_feedback?feedback:[]};
 }
 function getStaticDiscussionPostsService_(request,payload){
   requireUser_(request);var id=String(payload.discussion_id||''),meta=staticDiscussionMeta_(id),umap=userMap_();
@@ -617,7 +641,7 @@ function getStaticActivityProgressService_(request){
 }
 function seedStaticActivityMeta_(){
   var now=nowIso_(),acts=[],discs=[];
-  (STATIC_ACTIVITY_META||[]).forEach(function(a){acts.push({activity_id:a.activity_id,week_id:a.week_id,type:a.type,title:a.title,description_html:'',mode:a.mode||'individual',max_score:num_(a.max_score,100),due_at:String(a.due_at||''),visible:true,allow_comments:a.type==='discussion'||a.type==='project',project_code:a.project_code||'',created_at:now,updated_at:now});});
+  (STATIC_ACTIVITY_META||[]).forEach(function(a){acts.push({activity_id:a.activity_id,week_id:a.week_id,type:a.type,title:a.title,description_html:'',mode:a.mode||'individual',max_score:100,due_at:String(a.due_at||''),visible:true,allow_comments:a.type==='discussion'||a.type==='project',project_code:a.project_code||'',created_at:now,updated_at:now});});
   Object.keys(STATIC_DISCUSSION_BANK||{}).forEach(function(id){var d=STATIC_DISCUSSION_BANK[id];discs.push({discussion_id:id,activity_id:d.activity_id,prompt_html:'',min_posts:num_(d.min_posts,1),grading_mode:'manual',updated_at:now});});
   bulkUpsert_(LMS.SHEETS.ACTIVITIES,'activity_id',acts);bulkUpsert_(LMS.SHEETS.DISCUSSIONS,'discussion_id',discs);SpreadsheetApp.flush();
   return {activities:acts.length,discussions:discs.length};

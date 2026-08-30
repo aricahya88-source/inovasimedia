@@ -55,6 +55,7 @@ function api(request) {
       case 'adminGradebookActivities': return ok_(adminGradebookActivities_(request));
       case 'adminActivityRoster': return ok_(adminActivityRoster_(request,payload));
       case 'adminSaveGrade': return ok_(adminSaveGrade_(request,payload));
+      case 'adminImportGrades': return ok_(adminImportGrades_(request,payload));
       case 'adminAddSubmissionComment': return ok_(adminAddSubmissionComment_(request,payload));
       case 'adminSeedBundledContent': return ok_(adminSeedBundledContent_(request,payload));
       case 'adminExportWorkbook': return ok_(adminExportWorkbook_(request));

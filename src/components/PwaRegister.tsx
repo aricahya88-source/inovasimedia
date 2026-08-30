@@ -11,8 +11,8 @@ export default function PwaRegister() {
       refreshing=true;
       // Only once per tab. This switches users from the old cache-first worker
       // to the new network-first worker without an endless reload loop.
-      if(sessionStorage.getItem('lms-sw-v16-reloaded')!=='1'){
-        sessionStorage.setItem('lms-sw-v16-reloaded','1');
+      if(sessionStorage.getItem('lms-sw-v17-reloaded')!=='1'){
+        sessionStorage.setItem('lms-sw-v17-reloaded','1');
         window.location.reload();
       }
     };

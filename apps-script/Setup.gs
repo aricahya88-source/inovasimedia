@@ -98,3 +98,34 @@ function resetAdminPin() {
   var hp=makeUserPin_(pin);updateRowObj_(LMS.SHEETS.USERS,admin.__row,{pin_salt:hp.salt,pin_hash:hp.hash,updated_at:nowIso_()});
   Logger.log('PIN admin baru: '+pin);return true;
 }
+
+/**
+ * v1.7 — Migrasi aman skala nilai lama ke skala 100.
+ * Idempotent: aman dijalankan kembali. Tidak mengubah schema/header sheet.
+ */
+function upgradeScoreScale100() {
+  var activities=rows_(LMS.SHEETS.ACTIVITIES).map(function(a){
+    var c=cleanObj_(a);c.max_score=100;c.updated_at=nowIso_();return c;
+  });
+  if(activities.length)rewriteRows_(LMS.SHEETS.ACTIVITIES,activities);
+
+  var grades=rows_(LMS.SHEETS.GRADES).map(function(g){
+    var c=cleanObj_(g),max=num_(c.max_score,100),score=num_(c.score,0);
+    if(max>0&&max!==100)score=score/max*100;
+    c.score=Math.round(Math.max(0,Math.min(100,score))*100)/100;
+    c.max_score=100;c.updated_at=nowIso_();return c;
+  });
+  if(grades.length)rewriteRows_(LMS.SHEETS.GRADES,grades);
+
+  var attempts=rows_(LMS.SHEETS.QUIZ_ATTEMPTS).map(function(a){
+    var c=cleanObj_(a),max=num_(c.max_score,0),pct=num_(c.percentage,-1);
+    if(pct<0) pct=max>0?num_(c.score,0)/max*100:0;
+    pct=Math.round(Math.max(0,Math.min(100,pct))*100)/100;
+    c.score=pct;c.max_score=100;c.percentage=pct;return c;
+  });
+  if(attempts.length)rewriteRows_(LMS.SHEETS.QUIZ_ATTEMPTS,attempts);
+
+  SpreadsheetApp.flush();
+  Logger.log('Migrasi skala 100 selesai. Activities: '+activities.length+', grades: '+grades.length+', quiz attempts: '+attempts.length+'.');
+  return {activities:activities.length,grades:grades.length,quiz_attempts:attempts.length,max_score:100};
+}

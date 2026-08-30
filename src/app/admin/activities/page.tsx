@@ -22,7 +22,7 @@ export default function AdminActivities(){
         <label className="field"><span>Jenis</span><select value={a.type} onChange={e=>setA({...a,type:e.target.value})}><option value="assignment">Tugas</option><option value="checkpoint">Checkpoint</option><option value="reflection">Refleksi</option><option value="peer_review">Peer Review</option><option value="test">Testing</option><option value="presentation">Presentasi</option></select></label>
         <label className="field"><span>Judul</span><input value={a.title} onChange={e=>setA({...a,title:e.target.value})}/></label>
         <label className="field"><span>Mode</span><select value={a.mode} onChange={e=>setA({...a,mode:e.target.value})}><option value="individual">Individu</option><option value="group">Kelompok</option></select></label>
-        <label className="field"><span>Maks. nilai</span><input type="number" value={a.max_score} onChange={e=>setA({...a,max_score:Number(e.target.value)})}/></label>
+        <label className="field"><span>Skala penilaian</span><input type="number" value={100} disabled/><small>Semua aktivitas menggunakan skala 0–100.</small></label>
         <label className="field"><span>Deadline</span><input type="datetime-local" value={a.due_at||''} onChange={e=>setA({...a,due_at:e.target.value})}/></label>
       </div>
       <label className="field"><span>Instruksi</span><RichTextEditor value={a.description_html} onChange={v=>setA({...a,description_html:v})} minHeight={280}/></label>
